@@ -7,6 +7,52 @@ from flax import nnx
 
 
 class RNN(nnx.Module):
+    """Base class for recurrent neural networks.
+
+    A subclass must define the functions
+
+    * :func:`~RNN.__call__`
+    * :func:`~RNN.init_hidden_state`
+    """
+
+    def __call__(self, x: jnp.ndarray, h: jnp.ndarray) -> tuple[jnp.ndarray]:
+        """Compute output for given input.
+
+        Parameters
+        ----------
+        x : array
+            Input.
+        h : array
+            Hidden state.
+
+        Returns
+        -------
+        out : array
+            Output.
+        new_hidden_state : array
+            New hidden state.
+        """
+        raise NotImplementedError("Subclasses must implement __call__ method.")
+
+    def init_hidden_state(self, batch_size: int) -> jnp.ndarray:
+        """Sample action from policy given observation.
+
+        Parameters
+        ----------
+        batch_size : int
+            Batch size for the hidden state
+
+        Returns
+        -------
+        hidden_state : array
+            New hidden state.
+        """
+        raise NotImplementedError(
+            "Subclasses must implement init_hidden_state method."
+        )
+
+
+class StackedGRU(RNN):
     """Model of stacked Gated Recurrent Units.
 
     Parameters
@@ -76,7 +122,7 @@ class RNN(nnx.Module):
             new_hidden = new_hidden.at[..., i, : self.layer_sizes[i]].set(hi)
         return self.output_layer(x), new_hidden
 
-    def init_hidden(self, batch_size: int) -> jax.Array:
+    def init_hidden_state(self, batch_size: int) -> jax.Array:
         return jnp.zeros(
             (batch_size, len(self.layer_sizes), max(self.layer_sizes))
         )
