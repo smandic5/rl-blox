@@ -15,20 +15,30 @@ class StochasticRecurrentPolicyBase(nnx.Module):
     * :func:`~StochasticRecurrentPolicyBase.__call__`
     * :func:`~StochasticRecurrentPolicyBase.sample`
     * :func:`~StochasticRecurrentPolicyBase.log_probability`
+    * :func:`~StochasticRecurrentPolicyBase.entropy`
     * :func:`~StochasticRecurrentPolicyBase.init_hidden`
     """
 
-    def __call__(self, observation: jnp.ndarray) -> jnp.ndarray:
-        """Compute action probabilities for given observation."""
+    def __call__(
+        self, observation: jnp.ndarray, hidden_state: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Compute action probabilities and new hidden state for given observation and hidden state."""
         raise NotImplementedError("Subclasses must implement __call__ method.")
 
-    def sample(self, observation: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
-        """Sample action from policy given observation.
+    def sample(
+        self,
+        observation: jnp.ndarray,
+        hidden_state: jnp.ndarray,
+        key: jnp.ndarray,
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Sample action from policy given observation and hidden state.
 
         Parameters
         ----------
         observation : array
             Observation.
+        hidden_state : array
+            Hidden state.
 
         key : array
             Pseudo random number generator key for sampling.
@@ -37,20 +47,25 @@ class StochasticRecurrentPolicyBase(nnx.Module):
         -------
         action : array
             Sampled action.
+        hidden_state : array
+            New hidden state.
         """
         raise NotImplementedError("Subclasses must implement sample method.")
 
     def log_probability(
         self,
         observation: jnp.ndarray,
+        hidden_state: jnp.ndarray,
         action: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """Compute log probability of action given observation.
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Compute log probability of action given observation and hidden state.
 
         Parameters
         ----------
         observation : array
             Observation.
+        hidden_state : array
+            Hidden state.
 
         action : array
             Action.
@@ -59,12 +74,37 @@ class StochasticRecurrentPolicyBase(nnx.Module):
         -------
         log_prob : array
             Log probability of action given observation.
+        hidden_state : array
+            New hidden state.
         """
         raise NotImplementedError(
             "Subclasses must implement log_probability method."
         )
 
-    def init_hidden_state(self, batch_size: int) -> jnp.ndarray:
+    def entropy(
+        self, observation: jnp.ndarray, hidden_state: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Calculate entropy from policy given observation and hidden state.
+
+        Parameters
+        ----------
+        observation : array
+            Observation.
+        hidden_state : array
+            Hidden state.
+
+        Returns
+        -------
+        entropy : array
+            Entropy.
+        hidden_state : array
+            New hidden state.
+        """
+        raise NotImplementedError("Subclasses must implement sample method.")
+
+    def init_hidden_state(
+        self, batch_size: int
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Initialize and return a hidden state.
 
         Parameters
@@ -133,6 +173,10 @@ class RecurrentSoftmaxPolicy(StochasticRecurrentPolicyBase):
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         logits, new_hidden = self.logits(observation, hidden_state)
         return dist.Categorical(logits=logits).log_prob(action), new_hidden
+
+    def entropy(self, observation, hidden_state):
+        logits, new_hidden = self.logits(observation, hidden_state)
+        return dist.Categorical(logits=logits).entropy(), new_hidden
 
     def init_hidden_state(self, batch_size: int):
         return self.net.init_hidden_state(batch_size)

@@ -15,7 +15,9 @@ class RNN(nnx.Module):
     * :func:`~RNN.init_hidden_state`
     """
 
-    def __call__(self, x: jnp.ndarray, h: jnp.ndarray) -> tuple[jnp.ndarray]:
+    def __call__(
+        self, x: jnp.ndarray, h: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Compute output for given input.
 
         Parameters
