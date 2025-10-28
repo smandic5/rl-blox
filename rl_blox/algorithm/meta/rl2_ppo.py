@@ -17,6 +17,29 @@ from ...blox.gae import compute_gae
 from ...logging.logger import LoggerBase
 
 
+def one_hot(arr: jnp.ndarray, max_options: int) -> jnp.ndarray:
+    res = jnp.eye(max_options)[arr]
+    return res.reshape(list(arr.shape) + [max_options])
+
+
+def create_observation(
+    observation: jnp.ndarray,
+    last_action: jnp.ndarray,
+    last_reward: jnp.ndarray,
+    last_done: jnp.ndarray,
+    max_action_options: int,
+) -> jnp.ndarray:
+    return jnp.concatenate(
+        [
+            observation,
+            one_hot(last_action, max_action_options),
+            last_reward.reshape((-1, 1)),
+            last_done.reshape((-1, 1)),
+        ],
+        axis=1,
+    )
+
+
 def collect_trajectories(
     envs: gym.vector.VectorEnv,
     actor: StochasticRecurrentPolicyBase,
@@ -130,16 +153,32 @@ def collect_trajectories(
         None,
         None,
     )
-    obs = envs.reset()[0] if last_observation is None else last_observation
+    obs = (
+        create_observation(
+            envs.reset()[0],
+            envs.action_space.sample(),
+            jnp.zeros(envs.num_envs),
+            jnp.ones(envs.num_envs),
+            envs.single_action_space.n,
+        )
+        if last_observation is None
+        else last_observation
+    )
 
     for _ in range(batch_size):
-        # TODO add last action, reward and done to obs
         key, subkey = jax.random.split(key)
         action, new_hidden_state_actor = sample(
             actor, obs, hidden_state_actor, subkey
         )
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
+        )
+        next_obs = create_observation(
+            next_obs,
+            action,
+            reward,
+            jnp.logical_or(terminated, truncated),
+            envs.single_action_space.n,
         )
 
         observations = add_to_batch(observations, obs)
@@ -164,7 +203,7 @@ def collect_trajectories(
             ]
             for i, (r, l, o) in enumerate(finished_reward_len_obs):
                 global_step += int(l)
-                obs = obs.at[i].set(o)
+                obs = obs.at[i, : envs.single_observation_space.shape[0]].set(o)
                 if logger is not None:
                     # TODO figure out what to do with logging
                     pass
@@ -184,9 +223,9 @@ def collect_trajectories(
     def reshape_batch(batch):
         return jnp.permute_dims(batch, (1, 0)).flatten()
 
-    def reshape_obs_batch(observations):
-        return jnp.permute_dims(observations, (1, 0, 2)).reshape(
-            -1, envs.observation_space.shape[1]
+    def reshape_obs_batch(observations: jnp.ndarray):
+        return jnp.swapaxes(observations, 0, 1).reshape(
+            -1, observations.shape[-1]
         )
 
     def reshape_hidden_batch(hidden_state: jnp.ndarray):
@@ -406,7 +445,7 @@ def train_rl2_ppo(
         Updated critic optimizer.
     """
     key = jax.random.key(seed)
-    last_observation, _ = envs.reset(seed=seed)
+    envs.reset(seed=seed)
     envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
     assert (
         envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
@@ -421,6 +460,7 @@ def train_rl2_ppo(
     global_step = 0
     hidden_state_actor = None
     hidden_state_critic = None
+    last_observation = None
     for iteration in trange(iterations, disable=not progress_bar):
         # TODO sample task
 

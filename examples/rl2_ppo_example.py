@@ -43,6 +43,7 @@ envs = gym.make_vec(
 
 features = envs.observation_space.shape[1]
 actions = int(envs.single_action_space.n)
+features = envs.observation_space.shape[1] + actions + 2
 
 actor = StackedGRU(
     features,
@@ -68,8 +69,12 @@ optimizer_critic = nnx.Optimizer(
     critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
 )
 
-# ts = UniformTaskSelector([envs], key=jax.random.key(seed))
-# ts.select()
+logger = AIMLogger()
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="PPO",
+    hparams=hparams_model | hparams_algorithm,
+)
 
 actor, critic, optimizer_actor, optimizer_critic = train_rl2_ppo(
     envs,
@@ -83,4 +88,19 @@ actor, critic, optimizer_actor, optimizer_critic = train_rl2_ppo(
     batch_size=hparams_algorithm["batch_size"],
 )
 
-print("done")
+# Evaluation
+
+env = gym.make(env_name, render_mode="human")
+
+obs = jnp.concatenate(
+    [env.reset(seed=seed)[0], jnp.zeros(env.action_space.n + 2)]
+)
+hidden_state = actor.init_hidden_state(1)[0]
+
+while True:
+    probs, hidden_state = actor(obs, hidden_state)
+    action = int(jnp.argmax(probs))
+    obs, reward, terminated, truncated, _ = env.step(int(action))
+    if terminated or truncated:
+        obs, _ = env.reset()
+    obs = jnp.concatenate([obs, jnp.zeros(env.action_space.n + 2)])
