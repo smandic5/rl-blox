@@ -9,26 +9,29 @@ import tensorflow_probability.substrates.jax.distributions as dist
 from flax import nnx
 from tqdm.rich import trange
 
-from ...blox.function_approximator.policy_head import (
-    GaussianPolicy,
-    GaussianTanhPolicy,
-    SoftmaxPolicy,
-    StochasticPolicyBase,
+from ...blox.function_approximator.recurrent_policy_head import (
+    StochasticRecurrentPolicyBase,
 )
+from ...blox.function_approximator.rnn import RNN
 from ...blox.gae import compute_gae
 from ...logging.logger import LoggerBase
 
 
 def collect_trajectories(
     envs: gym.vector.VectorEnv,
-    actor: StochasticPolicyBase,
-    critic: nnx.Module,
+    actor: StochasticRecurrentPolicyBase,
+    critic: RNN,
+    hidden_state_actor: jnp.ndarray,
+    hidden_state_critic: jnp.ndarray,
     key: jnp.ndarray,
     batch_size: int = 64,
     logger: LoggerBase | None = None,
     last_observation=None,
     global_step: int = 0,
 ) -> tuple[
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
@@ -45,10 +48,14 @@ def collect_trajectories(
     ----------
     envs : gym.vector.VectorEnv
         The vectorized environment to interact with.
-    actor : StochasticPolicyBase
+    actor : StochasticRecurrentPolicyBase
         The actor network.
-    critic : nnx.Module
+    critic : RNN
         The critic network.
+    hidden_state_actor : array
+        Actor's hidden state.
+    hidden_state_critic : array
+        Critic's hidden state.
     key : jnp.ndarray
         Random key.
     batch_size : int, optional
@@ -63,16 +70,24 @@ def collect_trajectories(
 
     Returns
     -------
-    - observation : jnp.ndarray
+    observation : jnp.ndarray
         Array of observations.
-    - action : jnp.ndarray
+    action : jnp.ndarray
         Actions taken per step.
-    - reward : jnp.ndarray
+    reward : jnp.ndarray
         Array of rewards per step.
-    - terminated : jnp.ndarray
+    terminated : jnp.ndarray
         Flags indicating episode termination per step.
-    - next_value : jnp.ndarray
+    next_value : jnp.ndarray
         Array of predicted values for next steps per step.
+    hidden_state_actor : array
+        Actor's hidden states used in batch.
+    hidden_state_critic : array
+        Critic's hidden states used in batch.
+    new_hidden_state_actor : array
+        Actor's new hidden state.
+    new_hidden_state_critic : array
+        Critic's new hidden state.
     last_observation
         Last observation produced by the environment. Used for running
         an environment over multiple calls of this function.
@@ -81,12 +96,15 @@ def collect_trajectories(
     """
 
     @nnx.jit
-    def sample(policy, observation, subkey):
-        return policy.sample(observation, subkey)
+    def sample(
+        policy: StochasticRecurrentPolicyBase, observation, hidden_state, subkey
+    ):
+        return policy.sample(observation, hidden_state, subkey)
 
     @nnx.jit
-    def value(value_fn, observation):
-        return value_fn(observation).flatten()
+    def value(value_fn: RNN, observation, hidden_state):
+        value, next_hidden_state = value_fn(observation, hidden_state)
+        return value.flatten(), next_hidden_state
 
     def add_to_batch(batch, value):
         return (
@@ -95,7 +113,17 @@ def collect_trajectories(
             else jnp.concat([batch, value[None, ...]], axis=0)
         )
 
-    observations, actions, rewards, terminated_arr, next_values = (
+    (
+        observations,
+        actions,
+        rewards,
+        terminated_arr,
+        next_values,
+        hidden_states_actor,
+        hidden_states_critic,
+    ) = (
+        None,
+        None,
         None,
         None,
         None,
@@ -105,39 +133,53 @@ def collect_trajectories(
     obs = envs.reset()[0] if last_observation is None else last_observation
 
     for _ in range(batch_size):
+        # TODO add last action, reward and done to obs
         key, subkey = jax.random.split(key)
-        action = sample(actor, obs, subkey)
+        action, new_hidden_state_actor = sample(
+            actor, obs, hidden_state_actor, subkey
+        )
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
 
         observations = add_to_batch(observations, obs)
         actions = add_to_batch(actions, action)
+        hidden_states_actor = add_to_batch(
+            hidden_states_actor, hidden_state_actor
+        )
         rewards = add_to_batch(rewards, reward)
+        terminated_arr = add_to_batch(terminated_arr, terminated)
 
         obs = jnp.copy(next_obs)
         if "episode" in info.keys():
-            if logger is not None:
-                finished_reward_len_obs = [
-                    (r, l, o)
-                    for r, l, o, f in zip(
-                        info["episode"]["r"],
-                        info["episode"]["l"],
-                        info["final_obs"],
-                        info["_episode"],
-                    )
-                    if f
-                ]
-                for i, (r, l, o) in enumerate(finished_reward_len_obs):
-                    global_step += int(l)
-                    logger.record_stat("return", float(r), step=global_step)
-                    logger.start_new_episode()
-                    obs = obs.at[i].set(o)
+            finished_reward_len_obs = [
+                (r, l, o)
+                for r, l, o, f in zip(
+                    info["episode"]["r"],
+                    info["episode"]["l"],
+                    info["final_obs"],
+                    info["_episode"],
+                )
+                if f
+            ]
+            for i, (r, l, o) in enumerate(finished_reward_len_obs):
+                global_step += int(l)
+                obs = obs.at[i].set(o)
+                if logger is not None:
+                    # TODO figure out what to do with logging
+                    pass
 
-        next_value = value(critic, obs)
-        terminated_arr = add_to_batch(terminated_arr, terminated)
+        next_value, new_hidden_state_critic = value(
+            critic, obs, hidden_state_critic
+        )
         next_values = add_to_batch(next_values, next_value)
+        hidden_states_critic = add_to_batch(
+            hidden_states_critic, hidden_state_critic
+        )
+
         obs = next_obs
+        hidden_state_critic = new_hidden_state_critic
+        hidden_state_actor = new_hidden_state_actor
 
     def reshape_batch(batch):
         return jnp.permute_dims(batch, (1, 0)).flatten()
@@ -145,6 +187,11 @@ def collect_trajectories(
     def reshape_obs_batch(observations):
         return jnp.permute_dims(observations, (1, 0, 2)).reshape(
             -1, envs.observation_space.shape[1]
+        )
+
+    def reshape_hidden_batch(hidden_state: jnp.ndarray):
+        return jnp.swapaxes(hidden_state, 0, 1).reshape(
+            (-1, hidden_state.shape[-2], hidden_state.shape[-1])
         )
 
     return namedtuple(
@@ -155,6 +202,10 @@ def collect_trajectories(
             "reward",
             "terminated",
             "next_value",
+            "hidden_state_actor",
+            "hidden_state_critic",
+            "new_hidden_state_actor",
+            "new_hidden_state_critic",
             "last_observation",
             "global_step",
         ],
@@ -164,51 +215,25 @@ def collect_trajectories(
         reshape_batch(rewards),
         reshape_batch(terminated_arr),
         reshape_batch(next_values),
+        reshape_hidden_batch(hidden_states_actor),
+        reshape_hidden_batch(hidden_states_critic),
+        hidden_state_actor,
+        hidden_state_critic,
         obs,
         global_step,
     )
 
 
-def entropy(
-    actor: StochasticPolicyBase, observations: jnp.ndarray
-) -> jnp.ndarray:
-    """
-    Calculate the entropy for PPO loss.
-
-    Parameters
-    ----------
-    actor : StochasticPolicyBase
-        The actor network.
-    observations : jnp.ndarray
-        Batch of observations.
-
-    Returns
-    -------
-    entropy : jnp.ndarray
-        The computed entropy.
-    """
-    if type(actor) == SoftmaxPolicy:
-        logits = actor.logits(observations)
-        entropy = dist.Categorical(logits=logits).entropy()
-    else:
-        if type(actor) == GaussianTanhPolicy:
-            mean, std = actor(observations)
-        elif type(actor) == GaussianPolicy:
-            mean, log_var = actor(observations)
-            log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
-            std = jnp.exp(log_std)
-        entropy = dist.Normal(loc=mean, scale=std).entropy()
-    return jnp.mean(entropy)
-
-
 def ppo_loss(
-    actor: StochasticPolicyBase,
-    critic: nnx.Module,
+    actor: StochasticRecurrentPolicyBase,
+    critic: RNN,
     old_logps: jnp.ndarray,
     observations: jnp.ndarray,
     actions: jnp.ndarray,
     advantages: jnp.ndarray,
     returns: jnp.ndarray,
+    hidden_state_actor: jnp.ndarray,
+    hidden_state_critic: jnp.ndarray,
     clip: float = 0.2,
 ) -> jnp.ndarray:
     """
@@ -216,9 +241,9 @@ def ppo_loss(
 
     Parameters
     ----------
-    actor : StochasticPolicyBase
+    actor : StochasticRecurrentPolicyBase
         The actor network.
-    critic : nnx.Module
+    critic : RNN
         The critic network.
     old_logps : jnp.ndarray
         Log probabilities of actions calculated during rollout.
@@ -230,6 +255,10 @@ def ppo_loss(
         Estimated advantages for each action.
     returns : jnp.ndarray
         Computed returns.
+    hidden_state_actor : array
+        Actor's hidden state.
+    hidden_state_critic : array
+        Critic's hidden state.
     clip : float, optional
         Clipping range for the PPO objective.
 
@@ -238,21 +267,25 @@ def ppo_loss(
     loss : jnp.ndarray
         The computed PPO loss for the batch.
     """
-    logps = actor.log_probability(observations, actions)
+    logps = actor.log_probability(observations, hidden_state_actor, actions)[0]
     ratios = jnp.exp(logps - old_logps)
     surrogate1 = ratios * advantages
     surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
     policy_loss = -jnp.mean(jnp.minimum(surrogate1, surrogate2))
 
-    values = critic(observations)
+    values = critic(observations, hidden_state_critic)[0]
     value_loss = jnp.mean((returns - values) ** 2)
 
-    return policy_loss + 0.5 * value_loss - 0.01 * entropy(actor, observations)
+    return (
+        policy_loss
+        + 0.5 * value_loss
+        - 0.01 * jnp.mean(actor.entropy(observations, hidden_state_actor)[0])
+    )
 
 
 def update_ppo(
-    actor: StochasticPolicyBase,
-    critic: nnx.Module,
+    actor: StochasticRecurrentPolicyBase,
+    critic: RNN,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
     observation: jnp.ndarray,
@@ -260,15 +293,17 @@ def update_ppo(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     next_value: jnp.ndarray,
+    hidden_state_actor: jnp.ndarray,
+    hidden_state_critic: jnp.ndarray,
     epochs: int = 1,
 ) -> jnp.ndarray:
     """
     Updates the PPO agent
 
     Args:
-        actor : StochasticPolicyBase
+        actor : StochasticRecurrentPolicyBase
             The actor network
-        critic : nnx.Module
+        critic : RNN
             The critic network
         observation : jnp.ndarray
             Array of observations.
@@ -280,6 +315,10 @@ def update_ppo(
             Flags indicating episode termination per step.
         next_value : jnp.ndarray
             Array of predicted next_values per step.
+        hidden_state_actor : array
+            Actor's hidden state.
+        hidden_state_critic : array
+            Critic's hidden state.
         epochs : int, optional
             Number of training epochs.
 
@@ -288,14 +327,25 @@ def update_ppo(
         Calculated loss.
     """
     advs, returns = compute_gae(
-        reward, critic(observation).flatten(), next_value, terminated
+        reward,
+        critic(observation, hidden_state_critic)[0].flatten(),
+        next_value,
+        terminated,
     )
-    logp = actor.log_probability(observation, action)
+    logp = actor.log_probability(observation, hidden_state_actor, action)[0]
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
 
     for _ in range(epochs):
-        (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, logp, observation, action, advs, returns
+        loss_val, (grad_actor, grad_critic) = loss_grad_fn(
+            actor,
+            critic,
+            logp,
+            observation,
+            action,
+            advs,
+            returns,
+            hidden_state_actor,
+            hidden_state_critic,
         )
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
@@ -303,10 +353,10 @@ def update_ppo(
     return loss_val
 
 
-def train_ppo(
+def train_rl2_ppo(
     envs: gym.vector.VectorEnv,
-    actor: StochasticPolicyBase,
-    critic: nnx.Module,
+    actor: StochasticRecurrentPolicyBase,
+    critic: RNN,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
     iterations: int = 3000,
@@ -315,7 +365,7 @@ def train_ppo(
     seed: int = 1,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
-) -> tuple[StochasticPolicyBase, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
+) -> tuple[StochasticRecurrentPolicyBase, RNN, nnx.Optimizer, nnx.Optimizer]:
     """
     Train a PPO agent.
 
@@ -323,9 +373,9 @@ def train_ppo(
     ----------
     envs : gym.vector.VectorEnv
         The vectorized training environment.
-    actor : StochasticPolicyBase
+    actor : StochasticRecurrentPolicyBase
         The actor network.
-    critic : nnx.Module
+    critic : RNN
         The critic network.
     optimizer_actor : nnx.Optimizer
         Optimizer for the actor network.
@@ -346,9 +396,9 @@ def train_ppo(
 
     Returns
     -------
-    - actor : StochasticPolicyBase
+    - actor : StochasticRecurrentPolicyBase
         Trained actor network.
-    - critic : nnx.Module
+    - critic : RNN
         Trained critic network.
     - optimizer_actor : nnx.Optimizer
         Updated actor optimizer.
@@ -361,6 +411,7 @@ def train_ppo(
     assert (
         envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
     ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
+    # TODO envs -> task set
 
     if logger is not None:
         logger.start_new_episode()
@@ -368,7 +419,15 @@ def train_ppo(
     update_ppo_jitted = nnx.jit(update_ppo, static_argnames="epochs")
 
     global_step = 0
+    hidden_state_actor = None
+    hidden_state_critic = None
     for iteration in trange(iterations, disable=not progress_bar):
+        # TODO sample task
+
+        if True:  # TODO if new task
+            hidden_state_actor = actor.init_hidden_state(envs.num_envs)
+            hidden_state_critic = critic.init_hidden_state(envs.num_envs)
+
         key, subkey = jax.random.split(key)
         (
             observation,
@@ -376,12 +435,18 @@ def train_ppo(
             reward,
             terminated,
             next_value,
+            hidden_states_actor,
+            hidden_states_critic,
+            hidden_state_actor,
+            hidden_state_critic,
             last_observation,
             global_step,
         ) = collect_trajectories(
             envs,
             actor,
             critic,
+            hidden_state_actor,
+            hidden_state_critic,
             subkey,
             batch_size,
             logger,
@@ -399,6 +464,8 @@ def train_ppo(
             reward,
             terminated,
             next_value,
+            hidden_states_actor,
+            hidden_states_critic,
             epochs,
         )
 
