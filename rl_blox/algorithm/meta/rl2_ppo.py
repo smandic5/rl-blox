@@ -14,6 +14,7 @@ from ...blox.function_approximator.recurrent_policy_head import (
 )
 from ...blox.function_approximator.rnn import RNN
 from ...blox.gae import compute_gae
+from ...blox.multitask import TaskSelector
 from ...logging.logger import LoggerBase
 
 
@@ -393,7 +394,7 @@ def update_ppo(
 
 
 def train_rl2_ppo(
-    envs: gym.vector.VectorEnv,
+    task_selector: TaskSelector,
     actor: StochasticRecurrentPolicyBase,
     critic: RNN,
     optimizer_actor: nnx.Optimizer,
@@ -410,8 +411,8 @@ def train_rl2_ppo(
 
     Parameters
     ----------
-    envs : gym.vector.VectorEnv
-        The vectorized training environment.
+    task_selector : TaskSelector
+        Selector for vectorized environments.
     actor : StochasticRecurrentPolicyBase
         The actor network.
     critic : RNN
@@ -445,12 +446,15 @@ def train_rl2_ppo(
         Updated critic optimizer.
     """
     key = jax.random.key(seed)
-    envs.reset(seed=seed)
-    envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
-    assert (
-        envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
-    ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
+
     # TODO envs -> task set
+    for task in task_selector.tasks:
+        task.reset(seed=seed)
+        task = gym.wrappers.vector.RecordEpisodeStatistics(task)
+        assert (
+            task.metadata["autoreset_mode"]
+            == gym.vector.AutoresetMode.SAME_STEP
+        ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
 
     if logger is not None:
         logger.start_new_episode()
@@ -461,12 +465,14 @@ def train_rl2_ppo(
     hidden_state_actor = None
     hidden_state_critic = None
     last_observation = None
+    last_task_id = -1
     for iteration in trange(iterations, disable=not progress_bar):
-        # TODO sample task
-
-        if True:  # TODO if new task
+        task_id = task_selector.select()
+        envs: gym.vector.VectorEnv = task_selector.tasks[task_id]
+        if task_id != last_task_id:
             hidden_state_actor = actor.init_hidden_state(envs.num_envs)
             hidden_state_critic = critic.init_hidden_state(envs.num_envs)
+            last_observation = None
 
         key, subkey = jax.random.split(key)
         (
@@ -509,6 +515,7 @@ def train_rl2_ppo(
             epochs,
         )
 
+        task_selector.feedback(reward=reward.sum())
         if logger is not None:
             logger.record_stat("loss", loss_val, step=iteration)
 

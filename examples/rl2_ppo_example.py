@@ -5,8 +5,6 @@ import optax
 from flax import nnx
 
 from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
-from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
 from rl_blox.blox.function_approximator.recurrent_policy_head import (
     RecurrentSoftmaxPolicy,
 )
@@ -45,6 +43,9 @@ features = envs.observation_space.shape[1]
 actions = int(envs.single_action_space.n)
 features = envs.observation_space.shape[1] + actions + 2
 
+# TODO add multiple different envs
+task_selector = UniformTaskSelector([envs, envs], key=jax.random.key(seed))
+
 actor = StackedGRU(
     features,
     actions,
@@ -77,7 +78,7 @@ logger.define_experiment(
 )
 
 actor, critic, optimizer_actor, optimizer_critic = train_rl2_ppo(
-    envs,
+    task_selector,
     actor,
     critic,
     optimizer_actor,

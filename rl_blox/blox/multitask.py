@@ -186,6 +186,4 @@ class UniformTaskSelector(TaskSelector):
     def select(self):
         super().select()
         self.key, subkey = jax.random.split(self.key)
-        return self.tasks[
-            jax.random.randint(subkey, (1,), 0, len(self.tasks)).item()
-        ]
+        return jax.random.randint(subkey, (1,), 0, len(self.tasks)).item()
