@@ -8,18 +8,17 @@ import optax
 from flax import nnx
 from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
-from rl_blox.algorithm.meta.rl2_ppo import (
-    create_observation,
-    one_hot,
-    train_rl2_ppo,
-)
-from rl_blox.blox.env_util import OneHotObservationWrapper
+from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
+from rl_blox.blox.env_util import AppendHistoryWrapper, OneHotObservationWrapper
 from rl_blox.blox.function_approximator.recurrent_policy_head import (
     RecurrentSoftmaxPolicy,
 )
 from rl_blox.blox.function_approximator.rnn import StackedGRU
 from rl_blox.blox.multitask import UniformTaskSelector
-from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
+from rl_blox.blox.vec_env_util import (
+    AppendHistoryVecEnvWrapper,
+    OneHotVecObservationWrapper,
+)
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 params_frozen_lake = dict(
@@ -45,16 +44,6 @@ hparams_algorithm = dict(
     seed=1,
 )
 
-
-def one_hot(arr: np.ndarray, max_options: int) -> np.ndarray:
-    res = np.eye(max_options)[arr]
-    return res.reshape(list(arr.shape) + [max_options])
-
-
-def one_hot_single(i: int, max_options: int) -> np.ndarray:
-    return one_hot(jnp.array([i]), max_options).flatten()
-
-
 prep_key = jax.random.key(hparams_algorithm["seed"] + 1)
 prep_key, subkey = jax.random.split(prep_key)
 env_seeds = jax.random.randint(
@@ -66,7 +55,7 @@ env_seeds = jax.random.randint(
     minval=1,
     maxval=1000,
 )
-env_set = []
+env_set: list[gym.vector.VectorEnv] = []
 for envi in range(hparams_algorithm["num_envs"]):
     envs = gym.make_vec(
         params_frozen_lake["env_name"],
@@ -77,12 +66,12 @@ for envi in range(hparams_algorithm["num_envs"]):
         vectorization_mode="sync",
     )
     envs = OneHotVecObservationWrapper(envs)
+    envs = AppendHistoryVecEnvWrapper(envs)
 
     env_set.append(envs)
 
-# TODO handle discrete spaces
 actions = int(envs.single_action_space.n)
-features = int(envs.single_observation_space.shape[0]) + actions + 2
+features = int(envs.single_observation_space.shape[0])
 
 task_selector = UniformTaskSelector(env_set, key=prep_key)
 
@@ -149,10 +138,9 @@ while True:
         render_mode="human",
     )
     env = OneHotObservationWrapper(env)
+    env = AppendHistoryWrapper(env)
 
     obs = env.reset(seed=hparams_algorithm["seed"])[0]
-    print(obs)
-    obs = jnp.concatenate([obs, jnp.zeros(env.action_space.n + 2)])
     hidden_state = actor.init_hidden_state(1)[0]
 
     env_reward = 0
@@ -163,13 +151,6 @@ while True:
         env_reward += reward
         if terminated or truncated:
             obs, _ = env.reset()
-        obs = jnp.concatenate(
-            [
-                obs,
-                one_hot_single(action, actions),
-                jnp.array([reward, terminated or truncated]),
-            ]
-        )
     logger.record_stat("test_env_reward", env_reward, step=i)
 
     i += 1

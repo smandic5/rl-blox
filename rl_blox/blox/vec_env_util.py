@@ -163,3 +163,79 @@ class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
 
     def observations(self, observations):
         return self._one_hot(observations)
+
+
+class AppendHistoryVecEnvWrapper(gym.vector.VectorWrapper):
+    """
+    A wrapper that augments each observation with the last action, reward, and done flag.
+    """
+
+    def __init__(self, env: gym.vector.VectorEnv, one_hot_action=True):
+        super().__init__(env)
+
+        self.one_hot_action = one_hot_action
+        if self.one_hot_action:
+            if not isinstance(env.single_action_space, gym.spaces.Discrete):
+                raise TypeError(
+                    "One-hot action mode requires Discrete action space."
+                )
+            self.num_actions = env.single_action_space.n
+        else:
+            self.num_actions = np.prod(env.single_action_space.shape)
+
+        base_obs_space = env.single_observation_space
+        if not isinstance(base_obs_space, gym.spaces.Box):
+            raise TypeError(
+                "Expected Box observation space. If space is discrete, use AppendHistoryVecEnvWrapper first."
+            )
+
+        obs_len = base_obs_space.shape[0] + self.num_actions + 2
+        self.single_observation_space = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(obs_len,),
+            dtype=np.float32,
+        )
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(env.num_envs, obs_len),
+            dtype=np.float32,
+        )
+
+        self.last_action = np.zeros(
+            (env.num_envs, self.num_actions), dtype=np.float32
+        )
+        self.last_reward = np.zeros((env.num_envs, 1), dtype=np.float32)
+        self.last_done = np.zeros((env.num_envs, 1), dtype=np.float32)
+
+    def _augment_obs(self, obs):
+        return np.concatenate(
+            [obs, self.last_action, self.last_reward, self.last_done], axis=-1
+        )
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.last_action.fill(0)
+        self.last_reward.fill(0)
+        self.last_done.fill(0)
+        return self._augment_obs(obs), info
+
+    def step(self, actions):
+        obs, rewards, terminated, truncated, infos = self.env.step(actions)
+
+        # Update last action
+        if self.one_hot_action:
+            acts = np.zeros_like(self.last_action)
+            acts[np.arange(self.env.num_envs), actions] = 1.0
+            self.last_action = acts
+        else:
+            self.last_action = np.expand_dims(actions.astype(np.float32), -1)
+
+        # Update reward and done flags
+        self.last_reward = np.expand_dims(rewards.astype(np.float32), -1)
+        dones = np.logical_or(terminated, truncated).astype(np.float32)
+        self.last_done = np.expand_dims(dones, -1)
+
+        # Return augmented observation
+        return self._augment_obs(obs), rewards, terminated, truncated, infos

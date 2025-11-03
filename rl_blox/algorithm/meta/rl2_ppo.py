@@ -19,29 +19,6 @@ from ...blox.vec_env_util import TrajectoryCollector
 from ...logging.logger import LoggerBase
 
 
-def one_hot(arr: np.ndarray, max_options: int) -> np.ndarray:
-    res = np.eye(max_options)[arr]
-    return res.reshape(list(arr.shape) + [max_options])
-
-
-def create_observation(
-    observation: jnp.ndarray,
-    last_action: jnp.ndarray,
-    last_reward: jnp.ndarray,
-    last_done: jnp.ndarray,
-    max_action_options: int,
-) -> jnp.ndarray:
-    return jnp.concatenate(
-        [
-            observation,
-            one_hot(last_action, max_action_options),
-            last_reward.reshape((-1, 1)),
-            last_done.reshape((-1, 1)),
-        ],
-        axis=1,
-    )
-
-
 def collect_trajectories(
     envs: gym.vector.VectorEnv,
     actor: StochasticRecurrentPolicyBase,
@@ -136,17 +113,7 @@ def collect_trajectories(
 
     trajectory_collector = TrajectoryCollector(envs.num_envs)
 
-    obs = (
-        create_observation(
-            envs.reset()[0],
-            envs.action_space.sample(),
-            jnp.zeros(envs.num_envs),
-            jnp.ones(envs.num_envs),
-            envs.single_action_space.n,
-        )
-        if last_observation is None
-        else last_observation
-    )
+    obs = envs.reset()[0] if last_observation is None else last_observation
 
     for _ in range(batch_size):
         key, subkey = jax.random.split(key)
@@ -186,13 +153,7 @@ def collect_trajectories(
                     # TODO figure out what to do with logging
                     pass
 
-        obs = create_observation(
-            next_obs,
-            action,
-            reward,
-            jnp.logical_or(terminated, truncated),
-            envs.single_action_space.n,
-        )
+        obs = next_obs
         hidden_state_critic = new_hidden_state_critic
         hidden_state_actor = new_hidden_state_actor
 
