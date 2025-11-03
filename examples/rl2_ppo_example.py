@@ -1,10 +1,18 @@
+from functools import partial
+
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax import nnx
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
-from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
+from rl_blox.algorithm.meta.rl2_ppo import (
+    create_observation,
+    one_hot,
+    train_rl2_ppo,
+)
 from rl_blox.blox.function_approximator.recurrent_policy_head import (
     RecurrentSoftmaxPolicy,
 )
@@ -12,10 +20,13 @@ from rl_blox.blox.function_approximator.rnn import StackedGRU
 from rl_blox.blox.multitask import UniformTaskSelector
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-env_name = "CartPole-v1"
-seed = 1
-test_episodes = 10
-
+params_frozen_lake = dict(
+    env_name="FrozenLake-v1",
+    lake_size=4,
+    set_size_train=5,
+    set_size_test=2,
+    test_steps_per_env=1000,
+)
 hparams_model = {
     "actor_hidden_layers": [64, 64],
     "actor_activation": "relu",
@@ -25,33 +36,68 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    num_envs=5,
+    num_envs=32,
     batch_size=64,
-    iterations=1000,
+    iterations=500,
     epochs=2,
-    seed=seed,
+    seed=1,
 )
 
-envs = gym.make_vec(
-    env_name,
-    num_envs=hparams_algorithm["num_envs"],
-    vectorization_mode="sync",
-    vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP},
-)
 
-features = envs.observation_space.shape[1]
+def one_hot(arr: np.ndarray, max_options: int) -> np.ndarray:
+    res = np.eye(max_options)[arr]
+    return res.reshape(list(arr.shape) + [max_options])
+
+
+def one_hot_single(i: int, max_options: int) -> np.ndarray:
+    return one_hot(jnp.array([i]), max_options).flatten()
+
+
+prep_key = jax.random.key(hparams_algorithm["seed"] + 1)
+prep_key, subkey = jax.random.split(prep_key)
+env_seeds = jax.random.randint(
+    subkey,
+    (
+        params_frozen_lake["set_size_train"]
+        + params_frozen_lake["set_size_test"],
+    ),
+    minval=1,
+    maxval=1000,
+)
+env_set = []
+for envi in range(hparams_algorithm["num_envs"]):
+    envs = gym.make_vec(
+        params_frozen_lake["env_name"],
+        desc=generate_random_map(
+            size=params_frozen_lake["lake_size"], seed=env_seeds[envi].item()
+        ),
+        num_envs=hparams_algorithm["num_envs"],
+        vectorization_mode="sync",
+    )
+    box_space = gym.spaces.Box(
+        np.zeros(envs.single_observation_space.n, dtype=np.float64),
+        np.ones(envs.single_observation_space.n, dtype=np.float64),
+        dtype=np.float64,
+    )
+    one_hot_max = partial(one_hot, max_options=envs.single_observation_space.n)
+    envs = gym.wrappers.vector.TransformObservation(
+        envs, one_hot_max, box_space
+    )
+
+    env_set.append(envs)
+
+# TODO handle discrete spaces
 actions = int(envs.single_action_space.n)
-features = envs.observation_space.shape[1] + actions + 2
+features = int(envs.single_observation_space.n) + actions + 2
 
-# TODO add multiple different envs
-task_selector = UniformTaskSelector([envs, envs], key=jax.random.key(seed))
+task_selector = UniformTaskSelector(env_set, key=prep_key)
 
 actor = StackedGRU(
     features,
     actions,
     hparams_model["actor_hidden_layers"],
     hparams_model["actor_activation"],
-    nnx.Rngs(seed),
+    nnx.Rngs(hparams_algorithm["seed"]),
 )
 actor = RecurrentSoftmaxPolicy(actor)
 
@@ -60,7 +106,7 @@ critic = StackedGRU(
     1,
     hparams_model["critic_hidden_layers"],
     hparams_model["critic_activation"],
-    nnx.Rngs(seed),
+    nnx.Rngs(hparams_algorithm["seed"]),
 )
 
 optimizer_actor = nnx.Optimizer(
@@ -71,10 +117,11 @@ optimizer_critic = nnx.Optimizer(
 )
 
 logger = AIMLogger()
+# logger = StandardLogger(verbose=1)
 logger.define_experiment(
-    env_name=env_name,
-    algorithm_name="PPO",
-    hparams=hparams_model | hparams_algorithm,
+    env_name=params_frozen_lake["env_name"],
+    algorithm_name="RL2_PPO",
+    hparams=hparams_model | hparams_algorithm | params_frozen_lake,
 )
 
 actor, critic, optimizer_actor, optimizer_critic = train_rl2_ppo(
@@ -85,23 +132,54 @@ actor, critic, optimizer_actor, optimizer_critic = train_rl2_ppo(
     optimizer_critic,
     iterations=hparams_algorithm["iterations"],
     epochs=hparams_algorithm["epochs"],
-    logger=None,
+    logger=logger,
     batch_size=hparams_algorithm["batch_size"],
+    seed=hparams_algorithm["seed"],
 )
+
+for envs in env_set:
+    envs.close()
 
 # Evaluation
 
-env = gym.make(env_name, render_mode="human")
-
-obs = jnp.concatenate(
-    [env.reset(seed=seed)[0], jnp.zeros(env.action_space.n + 2)]
+one_hot_single_max = partial(
+    one_hot_single, max_options=envs.single_observation_space.n
 )
-hidden_state = actor.init_hidden_state(1)[0]
-
+i = 0
 while True:
-    probs, hidden_state = actor(obs, hidden_state)
-    action = int(jnp.argmax(probs))
-    obs, reward, terminated, truncated, _ = env.step(int(action))
-    if terminated or truncated:
-        obs, _ = env.reset()
+    env_i = i % params_frozen_lake["set_size_test"]
+
+    env = gym.make(
+        params_frozen_lake["env_name"],
+        desc=generate_random_map(
+            size=params_frozen_lake["lake_size"],
+            seed=env_seeds[hparams_algorithm["num_envs"] + env_i].item(),
+        ),
+        render_mode="human",
+    )
+    env = gym.wrappers.TransformObservation(env, one_hot_single_max, box_space)
+
+    obs = env.reset(seed=hparams_algorithm["seed"])[0]
+    print(obs)
     obs = jnp.concatenate([obs, jnp.zeros(env.action_space.n + 2)])
+    hidden_state = actor.init_hidden_state(1)[0]
+
+    env_reward = 0
+    for _ in range(params_frozen_lake["test_steps_per_env"]):
+        probs, hidden_state = actor(obs, hidden_state)
+        action = int(jnp.argmax(probs))
+        obs, reward, terminated, truncated, _ = env.step(int(action))
+        env_reward += reward
+        if terminated or truncated:
+            obs, _ = env.reset()
+        obs = jnp.concatenate(
+            [
+                obs,
+                one_hot_single(action, actions),
+                jnp.array([reward, terminated or truncated]),
+            ]
+        )
+    logger.record_stat("test_env_reward", env_reward, step=i)
+
+    i += 1
+    env.close()

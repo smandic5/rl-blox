@@ -18,8 +18,120 @@ from ...blox.multitask import TaskSelector
 from ...logging.logger import LoggerBase
 
 
-def one_hot(arr: jnp.ndarray, max_options: int) -> jnp.ndarray:
-    res = jnp.eye(max_options)[arr]
+class TrajectoryCollector:
+    def __init__(self, num_envs: int):
+        self.num_envs = num_envs
+        self.episode_start = jnp.zeros(num_envs, dtype=bool)
+        self.trajectories: list[list[tuple]] = []
+        for _ in range(self.num_envs):
+            self.trajectories.append([])
+        self.observations = None
+        self.actions = None
+        self.values = None
+        self.next_values = None
+        self.rewards = None
+        self.terminated = None
+        self.hidden_states_actor = None
+        self.hidden_states_critic = None
+
+    def add_to_batch(self, batch, trajectory):
+        return (
+            trajectory
+            if batch == None
+            else jnp.concat([batch, trajectory], axis=0)
+        )
+
+    def update(
+        self,
+        obs,
+        action,
+        value,
+        reward,
+        terminated,
+        truncated,
+        hidden_state_actor,
+        hidden_state_critic,
+    ):
+        for i in range(self.num_envs):
+            if not self.episode_start[i]:
+                step = (
+                    obs[i],
+                    action[i],
+                    value[i],
+                    reward[i],
+                    terminated[i],
+                    hidden_state_actor[i],
+                    hidden_state_critic[i],
+                )
+                self.trajectories[i].append(step)
+            else:
+                self.finish_trajectory(i, value[i])
+        self.episode_start = jnp.logical_or(terminated, truncated)
+
+    def extract_batch_stat(self, batch_index, stat_index):
+        return jnp.concatenate(
+            [
+                jnp.array(step[stat_index][None, ...])
+                for step in self.trajectories[batch_index]
+            ]
+        )
+
+    def finish_trajectory(self, i: int, value: jnp.ndarray):
+        observations = self.extract_batch_stat(i, 0)
+        actions = self.extract_batch_stat(i, 1)
+        values = self.extract_batch_stat(i, 2)
+        next_values = jnp.append(values[1:], value)
+        rewards = self.extract_batch_stat(i, 3)
+        terminated_arr = self.extract_batch_stat(i, 4)
+        hidden_states_actor = self.extract_batch_stat(i, 5)
+        hidden_states_critic = self.extract_batch_stat(i, 6)
+        self.trajectories[i].clear()
+
+        self.observations = self.add_to_batch(self.observations, observations)
+        self.actions = self.add_to_batch(self.actions, actions)
+        self.values = self.add_to_batch(self.values, values)
+        self.next_values = self.add_to_batch(self.next_values, next_values)
+        self.rewards = self.add_to_batch(self.rewards, rewards)
+        self.terminated = self.add_to_batch(self.terminated, terminated_arr)
+        self.hidden_states_actor = self.add_to_batch(
+            self.hidden_states_actor, hidden_states_actor
+        )
+        self.hidden_states_critic = self.add_to_batch(
+            self.hidden_states_critic, hidden_states_critic
+        )
+
+    def get_batch(self, next_values: jnp.ndarray):
+        for i in range(self.num_envs):
+            if len(self.trajectories[i]) == 0:
+                continue
+            self.finish_trajectory(i, next_values[i])
+
+        return namedtuple(
+            "PPO_Trajectory",
+            [
+                "observation",
+                "action",
+                "reward",
+                "terminated",
+                "value",
+                "next_value",
+                "hidden_state_actor",
+                "hidden_state_critic",
+            ],
+        )(
+            self.observations,
+            self.actions.flatten(),
+            self.rewards.flatten(),
+            self.terminated.flatten(),
+            self.values.flatten(),
+            self.next_values.flatten(),
+            self.hidden_states_actor,
+            self.hidden_states_critic,
+        )
+
+
+def one_hot(arr: np.ndarray, max_options: int) -> np.ndarray:
+    res = np.eye(max_options)[arr]
     return res.reshape(list(arr.shape) + [max_options])
 
 
@@ -53,6 +165,7 @@ def collect_trajectories(
     last_observation=None,
     global_step: int = 0,
 ) -> tuple[
+    jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
@@ -102,6 +215,8 @@ def collect_trajectories(
         Array of rewards per step.
     terminated : jnp.ndarray
         Flags indicating episode termination per step.
+    value : jnp.ndarray
+        Array of predicted values for steps.
     next_value : jnp.ndarray
         Array of predicted values for next steps per step.
     hidden_state_actor : array
@@ -126,34 +241,12 @@ def collect_trajectories(
         return policy.sample(observation, hidden_state, subkey)
 
     @nnx.jit
-    def value(value_fn: RNN, observation, hidden_state):
-        value, next_hidden_state = value_fn(observation, hidden_state)
+    def value_fn(value_rnn: RNN, observation, hidden_state):
+        value, next_hidden_state = value_rnn(observation, hidden_state)
         return value.flatten(), next_hidden_state
 
-    def add_to_batch(batch, value):
-        return (
-            jnp.array(value[None, ...])
-            if batch == None
-            else jnp.concat([batch, value[None, ...]], axis=0)
-        )
+    trajectory_collector = TrajectoryCollector(envs.num_envs)
 
-    (
-        observations,
-        actions,
-        rewards,
-        terminated_arr,
-        next_values,
-        hidden_states_actor,
-        hidden_states_critic,
-    ) = (
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
     obs = (
         create_observation(
             envs.reset()[0],
@@ -171,68 +264,51 @@ def collect_trajectories(
         action, new_hidden_state_actor = sample(
             actor, obs, hidden_state_actor, subkey
         )
+        value, new_hidden_state_critic = value_fn(
+            critic, obs, hidden_state_critic
+        )
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
-        next_obs = create_observation(
+        trajectory_collector.update(
+            obs,
+            action,
+            value,
+            reward,
+            terminated,
+            truncated,
+            hidden_state_actor,
+            hidden_state_critic,
+        )
+
+        if "episode" in info.keys():
+            finished_reward_len_obs = [
+                (r, l)
+                for r, l, f in zip(
+                    info["episode"]["r"],
+                    info["episode"]["l"],
+                    info["_episode"],
+                )
+                if f
+            ]
+            for i, (r, l) in enumerate(finished_reward_len_obs):
+                global_step += int(l)
+                if logger is not None:
+                    # TODO figure out what to do with logging
+                    pass
+
+        obs = create_observation(
             next_obs,
             action,
             reward,
             jnp.logical_or(terminated, truncated),
             envs.single_action_space.n,
         )
-
-        observations = add_to_batch(observations, obs)
-        actions = add_to_batch(actions, action)
-        hidden_states_actor = add_to_batch(
-            hidden_states_actor, hidden_state_actor
-        )
-        rewards = add_to_batch(rewards, reward)
-        terminated_arr = add_to_batch(terminated_arr, terminated)
-
-        obs = jnp.copy(next_obs)
-        if "episode" in info.keys():
-            finished_reward_len_obs = [
-                (r, l, o)
-                for r, l, o, f in zip(
-                    info["episode"]["r"],
-                    info["episode"]["l"],
-                    info["final_obs"],
-                    info["_episode"],
-                )
-                if f
-            ]
-            for i, (r, l, o) in enumerate(finished_reward_len_obs):
-                global_step += int(l)
-                obs = obs.at[i, : envs.single_observation_space.shape[0]].set(o)
-                if logger is not None:
-                    # TODO figure out what to do with logging
-                    pass
-
-        next_value, new_hidden_state_critic = value(
-            critic, obs, hidden_state_critic
-        )
-        next_values = add_to_batch(next_values, next_value)
-        hidden_states_critic = add_to_batch(
-            hidden_states_critic, hidden_state_critic
-        )
-
-        obs = next_obs
         hidden_state_critic = new_hidden_state_critic
         hidden_state_actor = new_hidden_state_actor
 
-    def reshape_batch(batch):
-        return jnp.permute_dims(batch, (1, 0)).flatten()
-
-    def reshape_obs_batch(observations: jnp.ndarray):
-        return jnp.swapaxes(observations, 0, 1).reshape(
-            -1, observations.shape[-1]
-        )
-
-    def reshape_hidden_batch(hidden_state: jnp.ndarray):
-        return jnp.swapaxes(hidden_state, 0, 1).reshape(
-            (-1, hidden_state.shape[-2], hidden_state.shape[-1])
-        )
+    value, new_hidden_state_critic = value_fn(critic, obs, hidden_state_critic)
+    batch = trajectory_collector.get_batch(value)
 
     return namedtuple(
         "PPO_Trajectory",
@@ -241,6 +317,7 @@ def collect_trajectories(
             "action",
             "reward",
             "terminated",
+            "value",
             "next_value",
             "hidden_state_actor",
             "hidden_state_critic",
@@ -250,13 +327,14 @@ def collect_trajectories(
             "global_step",
         ],
     )(
-        reshape_obs_batch(observations),
-        reshape_batch(actions),
-        reshape_batch(rewards),
-        reshape_batch(terminated_arr),
-        reshape_batch(next_values),
-        reshape_hidden_batch(hidden_states_actor),
-        reshape_hidden_batch(hidden_states_critic),
+        batch[0],
+        batch[1],
+        batch[2],
+        batch[3],
+        batch[4],
+        batch[5],
+        batch[6],
+        batch[7],
         hidden_state_actor,
         hidden_state_critic,
         obs,
@@ -332,6 +410,7 @@ def update_ppo(
     action: jnp.ndarray,
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
+    value: jnp.ndarray,
     next_value: jnp.ndarray,
     hidden_state_actor: jnp.ndarray,
     hidden_state_critic: jnp.ndarray,
@@ -353,6 +432,8 @@ def update_ppo(
             Array of rewards per step.
         terminated : jnp.ndarray
             Flags indicating episode termination per step.
+        value : jnp.ndarray
+            Array of predicted values per step.
         next_value : jnp.ndarray
             Array of predicted next_values per step.
         hidden_state_actor : array
@@ -366,12 +447,7 @@ def update_ppo(
     - loss_val : jnp.ndarray
         Calculated loss.
     """
-    advs, returns = compute_gae(
-        reward,
-        critic(observation, hidden_state_critic)[0].flatten(),
-        next_value,
-        terminated,
-    )
+    advs, returns = compute_gae(reward, value, next_value, terminated)
     logp = actor.log_probability(observation, hidden_state_actor, action)[0]
     loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
 
@@ -451,10 +527,6 @@ def train_rl2_ppo(
     for task in task_selector.tasks:
         task.reset(seed=seed)
         task = gym.wrappers.vector.RecordEpisodeStatistics(task)
-        assert (
-            task.metadata["autoreset_mode"]
-            == gym.vector.AutoresetMode.SAME_STEP
-        ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
 
     if logger is not None:
         logger.start_new_episode()
@@ -480,6 +552,7 @@ def train_rl2_ppo(
             action,
             reward,
             terminated,
+            value,
             next_value,
             hidden_states_actor,
             hidden_states_critic,
@@ -509,6 +582,7 @@ def train_rl2_ppo(
             action,
             reward,
             terminated,
+            value,
             next_value,
             hidden_states_actor,
             hidden_states_critic,
