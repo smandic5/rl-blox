@@ -4,6 +4,7 @@ from typing import Any
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx
 
 
@@ -132,3 +133,33 @@ class TrajectoryCollector:
             self.hidden_states_actor,
             self.hidden_states_critic,
         )
+
+
+class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
+    def __init__(self, env: gym.vector.VectorEnv):
+        if not isinstance(env.single_observation_space, gym.spaces.Discrete):
+            raise TypeError(
+                f"Expected Discrete observation space, got {type(env.single_observation_space)}"
+            )
+        super().__init__(env)
+
+        self.obs_states = env.single_observation_space.n
+
+        # New observation space becomes a one-hot vector
+        self.single_observation_space = gym.spaces.Box(
+            low=0, high=1, shape=(self.obs_states,), dtype=np.float32
+        )
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=(self.num_envs, self.obs_states),
+            dtype=np.float32,
+        )
+
+    def _one_hot(self, obs):
+        one_hot = np.zeros((obs.shape[0], self.obs_states), dtype=np.float32)
+        one_hot[np.arange(obs.shape[0]), obs] = 1.0
+        return one_hot
+
+    def observations(self, observations):
+        return self._one_hot(observations)

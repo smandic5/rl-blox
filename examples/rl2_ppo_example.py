@@ -13,11 +13,13 @@ from rl_blox.algorithm.meta.rl2_ppo import (
     one_hot,
     train_rl2_ppo,
 )
+from rl_blox.blox.env_util import OneHotObservationWrapper
 from rl_blox.blox.function_approximator.recurrent_policy_head import (
     RecurrentSoftmaxPolicy,
 )
 from rl_blox.blox.function_approximator.rnn import StackedGRU
 from rl_blox.blox.multitask import UniformTaskSelector
+from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 params_frozen_lake = dict(
@@ -38,7 +40,7 @@ hparams_model = {
 hparams_algorithm = dict(
     num_envs=32,
     batch_size=64,
-    iterations=500,
+    iterations=1,
     epochs=2,
     seed=1,
 )
@@ -74,21 +76,13 @@ for envi in range(hparams_algorithm["num_envs"]):
         num_envs=hparams_algorithm["num_envs"],
         vectorization_mode="sync",
     )
-    box_space = gym.spaces.Box(
-        np.zeros(envs.single_observation_space.n, dtype=np.float64),
-        np.ones(envs.single_observation_space.n, dtype=np.float64),
-        dtype=np.float64,
-    )
-    one_hot_max = partial(one_hot, max_options=envs.single_observation_space.n)
-    envs = gym.wrappers.vector.TransformObservation(
-        envs, one_hot_max, box_space
-    )
+    envs = OneHotVecObservationWrapper(envs)
 
     env_set.append(envs)
 
 # TODO handle discrete spaces
 actions = int(envs.single_action_space.n)
-features = int(envs.single_observation_space.n) + actions + 2
+features = int(envs.single_observation_space.shape[0]) + actions + 2
 
 task_selector = UniformTaskSelector(env_set, key=prep_key)
 
@@ -142,9 +136,6 @@ for envs in env_set:
 
 # Evaluation
 
-one_hot_single_max = partial(
-    one_hot_single, max_options=envs.single_observation_space.n
-)
 i = 0
 while True:
     env_i = i % params_frozen_lake["set_size_test"]
@@ -157,7 +148,7 @@ while True:
         ),
         render_mode="human",
     )
-    env = gym.wrappers.TransformObservation(env, one_hot_single_max, box_space)
+    env = OneHotObservationWrapper(env)
 
     obs = env.reset(seed=hparams_algorithm["seed"])[0]
     print(obs)
