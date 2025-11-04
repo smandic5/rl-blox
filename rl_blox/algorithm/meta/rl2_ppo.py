@@ -111,7 +111,14 @@ def collect_trajectories(
         value, next_hidden_state = value_rnn(observation, hidden_state)
         return value.flatten(), next_hidden_state
 
-    trajectory_collector = TrajectoryCollector(envs.num_envs)
+    trajectory_collector = TrajectoryCollector(
+        envs.num_envs,
+        batch_size,
+        envs.single_observation_space.shape,
+        envs.single_action_space.shape,
+        hidden_state_actor.shape[1:],
+        hidden_state_critic.shape[1:],
+    )
 
     obs = envs.reset()[0] if last_observation is None else last_observation
 
@@ -373,7 +380,6 @@ def train_rl2_ppo(
     """
     key = jax.random.key(seed)
 
-    # TODO envs -> task set
     for task in task_selector.tasks:
         task.reset(seed=seed)
         task = gym.wrappers.vector.RecordEpisodeStatistics(task)

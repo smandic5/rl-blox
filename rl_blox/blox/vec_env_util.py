@@ -9,91 +9,57 @@ from flax import nnx
 
 
 class TrajectoryCollector:
-    def __init__(self, num_envs: int):
-        self.num_envs = num_envs
-        self._episode_start = jnp.zeros(num_envs, dtype=bool)
+    def __init__(
+        self,
+        num_envs,
+        max_steps,
+        obs_shape,
+        action_shape,
+        hidden_actor_shape,
+        hidden_critic_shape,
+    ):
+        self.ptr = 0
+        self.obs_shape = obs_shape
+        self.action_shape = action_shape
+        self.hidden_actor_shape = hidden_actor_shape
+        self.hidden_critic_shape = hidden_critic_shape
 
-        self.trajectories: list[list[tuple]] = []
-        for _ in range(self.num_envs):
-            self.trajectories.append([])
-
-        self.observations: jnp.ndarray | None = None
-        self.actions: jnp.ndarray | None = None
-        self.values: jnp.ndarray | None = None
-        self.next_values: jnp.ndarray | None = None
-        self.rewards: jnp.ndarray | None = None
-        self.terminated: jnp.ndarray | None = None
-        self.hidden_states_actor: jnp.ndarray | None = None
-        self.hidden_states_critic: jnp.ndarray | None = None
-
-    def _add_to_batch(
-        self, batch: jnp.ndarray | None, trajectory: jnp.ndarray
-    ) -> jnp.ndarray:
-        return (
-            trajectory
-            if batch == None
-            else jnp.concat([batch, trajectory], axis=0)
+        self.observations = jnp.zeros((num_envs, max_steps, *obs_shape))
+        self.actions = jnp.zeros((num_envs, max_steps, *action_shape))
+        self.values = jnp.zeros((num_envs, max_steps + 1))
+        self.rewards = jnp.zeros((num_envs, max_steps))
+        self.terminated = jnp.zeros((num_envs, max_steps))
+        self.hidden_actor = jnp.zeros(
+            (num_envs, max_steps, *hidden_actor_shape)
         )
+        self.hidden_critic = jnp.zeros(
+            (num_envs, max_steps, *hidden_critic_shape)
+        )
+
+        self.invalid = jnp.zeros((num_envs, max_steps + 1), dtype=bool)
 
     def update(
         self,
-        obs: jnp.ndarray,
-        action: jnp.ndarray,
-        value: jnp.ndarray,
+        obs,
+        action,
+        value,
         reward,
-        terminated: jnp.ndarray,
-        truncated: jnp.ndarray,
-        hidden_state_actor: jnp.ndarray,
-        hidden_state_critic: jnp.ndarray,
+        terminated,
+        truncated,
+        h_actor,
+        h_critic,
     ):
-        for i in range(self.num_envs):
-            if not self._episode_start[i]:
-                step = (
-                    obs[i],
-                    action[i],
-                    value[i],
-                    reward[i],
-                    terminated[i],
-                    hidden_state_actor[i],
-                    hidden_state_critic[i],
-                )
-                self.trajectories[i].append(step)
-            else:
-                self.finish_trajectory(i, value[i])
-        self._episode_start = jnp.logical_or(terminated, truncated)
+        self.observations = self.observations.at[:, self.ptr].set(obs)
+        self.actions = self.actions.at[:, self.ptr].set(action)
+        self.values = self.values.at[:, self.ptr].set(value)
+        self.rewards = self.rewards.at[:, self.ptr].set(reward)
+        self.terminated = self.terminated.at[:, self.ptr].set(terminated)
+        self.hidden_actor = self.hidden_actor.at[:, self.ptr].set(h_actor)
+        self.hidden_critic = self.hidden_critic.at[:, self.ptr].set(h_critic)
 
-    def _extract_batch_stat(
-        self, batch_index: int, stat_index: int
-    ) -> jnp.ndarray:
-        return jnp.concatenate(
-            [
-                jnp.array(step[stat_index][None, ...])
-                for step in self.trajectories[batch_index]
-            ]
-        )
-
-    def finish_trajectory(self, i: int, value: jnp.ndarray):
-        observations = self._extract_batch_stat(i, 0)
-        actions = self._extract_batch_stat(i, 1)
-        values = self._extract_batch_stat(i, 2)
-        next_values = jnp.append(values[1:], value)
-        rewards = self._extract_batch_stat(i, 3)
-        terminated_arr = self._extract_batch_stat(i, 4)
-        hidden_states_actor = self._extract_batch_stat(i, 5)
-        hidden_states_critic = self._extract_batch_stat(i, 6)
-        self.trajectories[i].clear()
-
-        self.observations = self._add_to_batch(self.observations, observations)
-        self.actions = self._add_to_batch(self.actions, actions)
-        self.values = self._add_to_batch(self.values, values)
-        self.next_values = self._add_to_batch(self.next_values, next_values)
-        self.rewards = self._add_to_batch(self.rewards, rewards)
-        self.terminated = self._add_to_batch(self.terminated, terminated_arr)
-        self.hidden_states_actor = self._add_to_batch(
-            self.hidden_states_actor, hidden_states_actor
-        )
-        self.hidden_states_critic = self._add_to_batch(
-            self.hidden_states_critic, hidden_states_critic
+        self.ptr += 1
+        self.invalid = self.invalid.at[:, self.ptr].set(
+            jnp.logical_or(terminated, truncated)
         )
 
     def get_batch(self, next_values: jnp.ndarray) -> tuple[
@@ -106,10 +72,8 @@ class TrajectoryCollector:
         jnp.ndarray,
         jnp.ndarray,
     ]:
-        for i in range(self.num_envs):
-            if len(self.trajectories[i]) == 0:
-                continue
-            self.finish_trajectory(i, next_values[i])
+        self.values = self.values.at[:, -1].set(next_values)
+        valid = ~self.invalid[:, :-1].flatten()
 
         return namedtuple(
             "PPO_Trajectory",
@@ -124,14 +88,14 @@ class TrajectoryCollector:
                 "hidden_state_critic",
             ],
         )(
-            self.observations,
-            self.actions.flatten(),
-            self.rewards.flatten(),
-            self.terminated.flatten(),
-            self.values.flatten(),
-            self.next_values.flatten(),
-            self.hidden_states_actor,
-            self.hidden_states_critic,
+            self.observations.reshape(-1, *self.obs_shape)[valid],
+            self.actions.reshape(-1, *self.action_shape)[valid],
+            self.rewards.flatten()[valid],
+            self.terminated.flatten()[valid],
+            self.values[:, :-1].flatten()[valid],
+            self.values[:, 1:].flatten()[valid],
+            self.hidden_actor.reshape(-1, *self.hidden_actor_shape)[valid],
+            self.hidden_critic.reshape(-1, *self.hidden_critic_shape)[valid],
         )
 
 
