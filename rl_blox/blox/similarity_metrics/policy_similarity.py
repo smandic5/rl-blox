@@ -20,12 +20,14 @@ def _pairwise_euclid(A: jnp.ndarray, B: jnp.ndarray) -> jnp.ndarray:
     euclidean distance :  jnp.ndarray
         Distance/Cost Matrix
     """
+    A_compact = jnp.sum(A, axis=0)
+    B_compact = jnp.sum(B, axis=0)
     # a^2
-    A_sq = jnp.sum(A**2, axis=1)[:, None]
+    A_sq = jnp.sum(A_compact**2, axis=1)[:, None]
     # b^2
-    B_sq = jnp.sum(B**2, axis=1)[None, :]
+    B_sq = jnp.sum(B_compact**2, axis=1)[None, :]
     # ab
-    cross = A @ B.T
+    cross = A_compact @ B_compact.T
     # a^2 - 2ab + b^2 = (a-b)^2
     return A_sq + B_sq - 2 * cross
 
@@ -94,8 +96,8 @@ def get_network_distance(
         if i + 1 < len(model1_layers):
             for swap_index in range(len(sort_i)):
                 _swap_perceptron(
-                    model2_layers_cloned,
-                    model2_layers_cloned,
+                    model2_layers_cloned[i],
+                    model2_layers_cloned[i],
                     swap_index,
                     sort_i[swap_index],
                 )
@@ -168,7 +170,7 @@ def _swap_perceptron(layer, layer_next, i1: int, i2: int):
 def _get_weights(layer) -> jnp.ndarray:
     if type(layer) == nnx.Linear:
         weights = layer.kernel.raw_value[None, ...]
-    if type(layer) == nnx.GRUCell:
+    elif type(layer) == nnx.GRUCell:
         weights = jnp.concat(
             (
                 layer.dense_i.kernel.raw_value[None, ...],
@@ -176,12 +178,16 @@ def _get_weights(layer) -> jnp.ndarray:
             ),
             axis=0,
         )
+    else:
+        raise Exception(f"Unrecognized layer type: {type(layer)}.")
     return weights
 
 
 def _set_weights(layer, new_weights: jnp.ndarray):
     if type(layer) == nnx.Linear:
         layer.kernel.raw_value = new_weights[0]
-    if type(layer) == nnx.GRUCell:
+    elif type(layer) == nnx.GRUCell:
         layer.dense_i = nnx.variablelib.Param(new_weights[0])
         layer.dense_h = nnx.variablelib.Param(new_weights[1])
+    else:
+        raise Exception(f"Unrecognized layer type: {type(layer)}.")
