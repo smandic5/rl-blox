@@ -20,8 +20,8 @@ def _pairwise_euclid(A: jnp.ndarray, B: jnp.ndarray) -> jnp.ndarray:
     euclidean distance :  jnp.ndarray
         Distance/Cost Matrix
     """
-    A_compact = jnp.sum(A, axis=0)
-    B_compact = jnp.sum(B, axis=0)
+    A_compact = jnp.sum(A, axis=-1)
+    B_compact = jnp.sum(B, axis=-1)
     # a^2
     A_sq = jnp.sum(A_compact**2, axis=1)[:, None]
     # b^2
@@ -95,6 +95,8 @@ def get_network_distance(
         # swap perceptron so that the next layer has its inputs in the correct place
         if i + 1 < len(model1_layers):
             for swap_index in range(len(sort_i)):
+                if swap_index == sort_i[swap_index]:
+                    continue
                 _swap_perceptron(
                     model2_layers_cloned[i],
                     model2_layers_cloned[i],
@@ -169,12 +171,12 @@ def _swap_perceptron(layer, layer_next, i1: int, i2: int):
 
 def _get_weights(layer) -> jnp.ndarray:
     if type(layer) == nnx.Linear:
-        weights = layer.kernel.raw_value[None, ...]
+        weights = layer.kernel.raw_value[..., None]
     elif type(layer) == nnx.GRUCell:
         weights = jnp.concat(
             (
-                layer.dense_i.kernel.raw_value[None, ...],
-                layer.dense_h.kernel.raw_value[None, ...],
+                layer.dense_i.kernel.raw_value[..., None],
+                layer.dense_h.kernel.raw_value[..., None],
             ),
             axis=0,
         )
@@ -185,9 +187,9 @@ def _get_weights(layer) -> jnp.ndarray:
 
 def _set_weights(layer, new_weights: jnp.ndarray):
     if type(layer) == nnx.Linear:
-        layer.kernel.raw_value = new_weights[0]
+        layer.kernel.raw_value = new_weights[..., 0]
     elif type(layer) == nnx.GRUCell:
-        layer.dense_i = nnx.variablelib.Param(new_weights[0])
-        layer.dense_h = nnx.variablelib.Param(new_weights[1])
+        layer.dense_i.kernel.raw_value = new_weights[..., 0]
+        layer.dense_h.kernel.raw_value = new_weights[..., 1]
     else:
         raise Exception(f"Unrecognized layer type: {type(layer)}.")
