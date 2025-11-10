@@ -8,6 +8,7 @@ from gymnasium.wrappers import TransformObservation
 from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
+from .similarity_metrics.policy_similarity import get_policy_distance_matrix
 
 
 class TaskSelectionMixin:
@@ -93,7 +94,7 @@ class TaskSelector:
         self.waiting_for_reward = True
         return 0
 
-    def feedback(self, reward: float):
+    def feedback(self, reward: float, **kwargs):
         assert self.waiting_for_reward, "Cannot assign reward to any target"
         self.waiting_for_reward = False
 
@@ -131,7 +132,7 @@ class DUCBGeneralized(TaskSelector):
         self.chosen_arm = self.ducb.choose_arm()
         return self.tasks[self.chosen_arm]
 
-    def feedback(self, reward: float):
+    def feedback(self, reward: float, **kwargs):
         last_rewards = np.array(self.last_rewards[self.chosen_arm])[::-1]
 
         if len(last_rewards) == 0:
@@ -174,7 +175,7 @@ class RoundRobinSelector(TaskSelector):
         self.i += 1
         return self.tasks[self.i % len(self.tasks)]
 
-    def feedback(self, reward: float):
+    def feedback(self, reward: float, **kwargs):
         super().feedback(reward)
 
 
@@ -193,3 +194,38 @@ class WeightedTaskSelector(TaskSelector):
 class UniformTaskSelector(WeightedTaskSelector):
     def __init__(self, tasks, **kwargs):
         super().__init__(tasks, weights=None, **kwargs)
+
+
+class PolicySimilarityTaskSelector(WeightedTaskSelector):
+    def __init__(
+        self,
+        tasks,
+        policies: list,
+        prefer_similar: bool = True,
+        choose_from_last_pick: bool = False,
+        **kwargs,
+    ):
+        super().__init__(tasks, weights=None, **kwargs)
+        self.policies = policies
+        self.prefer_similar = prefer_similar
+        self.choose_from_last_pick = choose_from_last_pick
+        self.last_picked = 0
+
+    def recalculate_weights(self):
+        cost_matrix = get_policy_distance_matrix(self.policies)
+        if self.choose_from_last_pick:
+            policy_costs = cost_matrix[self.last_picked]
+        else:
+            policy_costs = jnp.sum(cost_matrix, axis=-1)
+        if not self.prefer_similar:
+            policy_costs *= -1
+        self.weights = jax.nn.softmax(policy_costs)
+
+    def select(self):
+        self.last_picked = super().select()
+        return self.last_picked
+
+    def feedback(self, reward: float, **kwargs):
+        super().feedback(reward)
+        self.policies[self.last_picked] = kwargs["policy"]
+        self.recalculate_weights()
