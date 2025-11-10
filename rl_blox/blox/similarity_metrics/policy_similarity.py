@@ -4,6 +4,9 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
+from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.blox.function_approximator.rnn import StackedGRU
+
 
 def _pairwise_euclid(A: jnp.ndarray, B: jnp.ndarray) -> jnp.ndarray:
     """Calculate a distance array between individual rows of the given matrices.
@@ -62,27 +65,23 @@ def layer_distance(layer1, layer2) -> tuple[float, jnp.ndarray]:
     return cost[mi, mj].sum().item(), mj[sorted_i]
 
 
-def get_network_distance(
-    model1_layers: list,
-    model2_layers: list,
-) -> float:
+def get_network_distance(model1, model2) -> float:
     """Calculate the euclidiean distance between 2 networks (lists of layers)
 
     Parameters
     ----------
-    model1_layers : list
-        layers of the 1st network
-    model2_layers : list
-        layers of the 2nd network
-    get_weights : Callable[[Any], jnp.ndarray]
-        Callable that gets the weights of a single layer
-    set_weights : Callable[[Any, jnp.ndarray], None]
+    model1_layers
+        1st network
+    model2_layers
+        2nd network
 
     Returns
     -------
     euclidean distance : float
         euclidean distance of networks
     """
+    model1_layers = _get_layers(model1)
+    model2_layers = _get_layers(model2)
     model2_layers_cloned = [nnx.clone(layer) for layer in model2_layers]
     total_distance = 0
     for i in range(len(model1_layers)):
@@ -104,6 +103,19 @@ def get_network_distance(
                     sort_i[swap_index],
                 )
     return total_distance
+
+
+def get_policy_distance_matrix(policies: list) -> jnp.ndarray:
+    num_policies = len(policies)
+    dist = jnp.zeros((num_policies, num_policies))
+    for this in range(num_policies):
+        for other in range(num_policies):
+            if this == other:
+                continue
+            similarity = get_network_distance(policies[this], policies[other])
+            dist = dist.at[this, other].set(similarity)
+            dist = dist.at[other, this].set(similarity)
+    return dist
 
 
 def _swap_rows(arr: jnp.ndarray, n: int, m: int) -> jnp.ndarray:
@@ -193,3 +205,13 @@ def _set_weights(layer, new_weights: jnp.ndarray):
         layer.dense_h.kernel.raw_value = new_weights[..., 1]
     else:
         raise Exception(f"Unrecognized layer type: {type(layer)}.")
+
+
+def _get_layers(policy) -> list:
+    if type(policy) == MLP:
+        layers = policy.hidden_layers + [policy.output_layer]
+    elif type(policy) == StackedGRU:
+        layers = policy.gru_layers + [policy.output_layer]
+    else:
+        raise Exception(f"Unrecognized policy type: {type(policy)}.")
+    return layers
