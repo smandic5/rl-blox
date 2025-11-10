@@ -178,12 +178,18 @@ class RoundRobinSelector(TaskSelector):
         super().feedback(reward)
 
 
-class UniformTaskSelector(TaskSelector):
+class WeightedTaskSelector(TaskSelector):
     def __init__(self, tasks, **kwargs):
         super().__init__(tasks)
         self.key = kwargs["key"]
+        self.weights = kwargs["weights"]
 
     def select(self):
         super().select()
         self.key, subkey = jax.random.split(self.key)
-        return jax.random.randint(subkey, (1,), 0, len(self.tasks)).item()
+        return jax.random.choice(subkey, len(self.tasks), p=self.weights).item()
+
+
+class UniformTaskSelector(WeightedTaskSelector):
+    def __init__(self, tasks, **kwargs):
+        super().__init__(tasks, weights=None, **kwargs)
