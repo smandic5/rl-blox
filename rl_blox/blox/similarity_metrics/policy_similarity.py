@@ -1,3 +1,5 @@
+from typing import Any, Callable
+
 import jax.numpy as jnp
 import optax
 from flax import nnx
@@ -22,23 +24,21 @@ def _pairwise_euclid(A: jnp.ndarray, B: jnp.ndarray) -> jnp.ndarray:
     A_sq = jnp.sum(A**2, axis=1)[:, None]
     # b^2
     B_sq = jnp.sum(B**2, axis=1)[None, :]
-    # 2ab
+    # ab
     cross = A @ B.T
     # a^2 - 2ab + b^2 = (a-b)^2
     return A_sq + B_sq - 2 * cross
 
 
-def layer_distance(
-    layer1: nnx.Linear, layer2: nnx.Linear
-) -> tuple[float, jnp.ndarray]:
+def layer_distance(layer1, layer2) -> tuple[float, jnp.ndarray]:
     """Calculates the distance between 2 layers and gives
     the indices on how to align the second layer
 
     Parameters
     ----------
-    layer1 : nnx.Linear
+    layer1
         Layer 1
-    layer2 : nnx.Linear
+    layer2
         Layer 2
 
     Returns
@@ -48,8 +48,8 @@ def layer_distance(
     sorting indicies : jnp.ndarray]
         indicies array for sorting
     """
-    w1 = layer1.kernel
-    w2 = layer2.kernel
+    w1 = _get_weights(layer1)
+    w2 = _get_weights(layer2)
 
     cost = _pairwise_euclid(w1, w2)
 
@@ -61,16 +61,20 @@ def layer_distance(
 
 
 def get_network_distance(
-    model1_layers: list[nnx.Linear], model2_layers: list[nnx.Linear]
+    model1_layers: list,
+    model2_layers: list,
 ) -> float:
-    """Calculate the euclidiean distance between 2 networks (lists of linear layers)
+    """Calculate the euclidiean distance between 2 networks (lists of layers)
 
     Parameters
     ----------
-    model1_layers : list[nnx.Linear]
-        linear layers of the 1st network
-    model2_layers : list[nnx.Linear]
-        linear layers of the 2nd network
+    model1_layers : list
+        layers of the 1st network
+    model2_layers : list
+        layers of the 2nd network
+    get_weights : Callable[[Any], jnp.ndarray]
+        Callable that gets the weights of a single layer
+    set_weights : Callable[[Any, jnp.ndarray], None]
 
     Returns
     -------
@@ -89,12 +93,9 @@ def get_network_distance(
         # swap perceptron so that the next layer has its inputs in the correct place
         if i + 1 < len(model1_layers):
             for swap_index in range(len(sort_i)):
-                (
-                    model2_layers_cloned[i].kernel,
-                    model2_layers_cloned[i + 1].kernel,
-                ) = _swap_perceptron(
-                    model2_layers_cloned[i].kernel,
-                    model2_layers_cloned[i + 1].kernel,
+                _swap_perceptron(
+                    model2_layers_cloned,
+                    model2_layers_cloned,
                     swap_index,
                     sort_i[swap_index],
                 )
@@ -145,37 +146,42 @@ def _swap_collumns(arr: jnp.ndarray, n: int, m: int):
     return arr[:, idx]
 
 
-def _swap_perceptron(
-    layer_weights: nnx.variablelib.Param,
-    next_weights: nnx.variablelib.Param,
-    i1: int,
-    i2: int,
-) -> tuple[nnx.variablelib.Param, nnx.variablelib.Param]:
+def _swap_perceptron(layer, layer_next, i1: int, i2: int):
     """Swap a perceptron in a network by swapping the according
     weights in it's and the next layer
 
     Parameters
     ----------
-    layer_weights : nnx.variablelib.Param
+    layer
         Perceptron's layer
-    next_weights : nnx.variablelib.Param
+    layer_next
         The following layer
     i1 : int
         Index of the perceptron
     i2 : int
         Goal Index
-
-    Returns
-    -------
-    layer_weights : nnx.variablelib.Param
-        Swapped weights of perceptrons layer
-    next_weights : nnx.variablelib.Param
-        Swapped weights of next layer
     """
-    layer_weights = _swap_collumns(layer_weights, i1, i2)
-    layer_weights = nnx.variablelib.Param(layer_weights)
+    _set_weights(layer, _swap_collumns(_get_weights(layer), i1, i2))
+    _set_weights(layer_next, _swap_rows(_get_weights(layer_next), i1, i2))
 
-    next_weights = _swap_rows(next_weights, i1, i2)
-    next_weights = nnx.variablelib.Param(next_weights)
 
-    return layer_weights, next_weights
+def _get_weights(layer) -> jnp.ndarray:
+    if type(layer) == nnx.Linear:
+        weights = layer.kernel.raw_value[None, ...]
+    if type(layer) == nnx.GRUCell:
+        weights = jnp.concat(
+            (
+                layer.dense_i.kernel.raw_value[None, ...],
+                layer.dense_h.kernel.raw_value[None, ...],
+            ),
+            axis=0,
+        )
+    return weights
+
+
+def _set_weights(layer, new_weights: jnp.ndarray):
+    if type(layer) == nnx.Linear:
+        layer.kernel.raw_value = new_weights[0]
+    if type(layer) == nnx.GRUCell:
+        layer.dense_i = nnx.variablelib.Param(new_weights[0])
+        layer.dense_h = nnx.variablelib.Param(new_weights[1])
