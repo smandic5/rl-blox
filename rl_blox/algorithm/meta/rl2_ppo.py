@@ -20,7 +20,7 @@ from ...logging.logger import LoggerBase
 
 
 def collect_trajectories(
-    envs: gym.vector.VectorEnv,
+    envs: gym.wrappers.vector.RecordEpisodeStatistics,
     actor: StochasticRecurrentPolicyBase,
     critic: RNN,
     hidden_state_actor: jnp.ndarray,
@@ -122,7 +122,8 @@ def collect_trajectories(
 
     obs = envs.reset()[0] if last_observation is None else last_observation
 
-    for _ in range(batch_size):
+    accumulated_return = 0.0
+    for step in range(batch_size):
         key, subkey = jax.random.split(key)
         action, new_hidden_state_actor = sample(
             actor, obs, hidden_state_actor, subkey
@@ -155,14 +156,21 @@ def collect_trajectories(
                 if f
             ]
             for i, (r, l) in enumerate(finished_reward_len_obs):
-                global_step += int(l)
+                accumulated_return += r
                 if logger is not None:
-                    # TODO figure out what to do with logging
-                    pass
+                    logger.record_stat("return", r, step=global_step + step)
 
         obs = next_obs
         hidden_state_critic = new_hidden_state_critic
         hidden_state_actor = new_hidden_state_actor
+
+    if logger is not None:
+        accumulated_return += jnp.sum(envs.episode_returns).item()
+        logger.record_stat(
+            "return_per_epoch",
+            accumulated_return,
+            step=global_step + batch_size,
+        )
 
     value, new_hidden_state_critic = value_fn(critic, obs, hidden_state_critic)
     batch = trajectory_collector.get_batch(value)
@@ -195,7 +203,7 @@ def collect_trajectories(
         hidden_state_actor,
         hidden_state_critic,
         obs,
-        global_step,
+        global_step + batch_size,
     )
 
 
@@ -327,6 +335,7 @@ def update_ppo(
 
 
 def train_rl2_ppo(
+    env_set: list[gym.vector.VectorEnv],
     task_selector: TaskSelector,
     actor: StochasticRecurrentPolicyBase,
     critic: RNN,
@@ -344,6 +353,8 @@ def train_rl2_ppo(
 
     Parameters
     ----------
+    env_set : list[gym.vector.VectorEnv]
+        Set of vectorized envbironments.
     task_selector : TaskSelector
         Selector for vectorized environments.
     actor : StochasticRecurrentPolicyBase
@@ -380,9 +391,9 @@ def train_rl2_ppo(
     """
     key = jax.random.key(seed)
 
-    for task in task_selector.tasks:
-        task.reset(seed=seed)
-        task = gym.wrappers.vector.RecordEpisodeStatistics(task)
+    for env in env_set:
+        env.reset(seed=seed)
+        env = gym.wrappers.vector.RecordEpisodeStatistics(env)
 
     if logger is not None:
         logger.start_new_episode()
@@ -396,7 +407,7 @@ def train_rl2_ppo(
     last_task_id = -1
     for iteration in trange(iterations, disable=not progress_bar):
         task_id = task_selector.select()
-        envs: gym.vector.VectorEnv = task_selector.tasks[task_id]
+        envs = env_set[task_id]
         if task_id != last_task_id:
             hidden_state_actor = actor.init_hidden_state(envs.num_envs)
             hidden_state_critic = critic.init_hidden_state(envs.num_envs)
@@ -445,8 +456,10 @@ def train_rl2_ppo(
             epochs,
         )
 
-        task_selector.feedback(reward=reward.sum())
+        task_selector.feedback(reward=reward.sum(), policy=nnx.clone(actor))
         if logger is not None:
             logger.record_stat("loss", loss_val, step=iteration)
+            logger.record_epoch("RL2_PPO_ACTOR", actor, step=iteration)
+            logger.record_epoch("RL2_PPO_CRITIC", critic, step=iteration)
 
     return actor, critic, optimizer_actor, optimizer_critic
