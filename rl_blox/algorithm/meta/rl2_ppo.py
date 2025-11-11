@@ -100,37 +100,25 @@ def collect_trajectories(
         Global step count
     """
 
-    @nnx.jit
-    def sample(
-        policy: StochasticRecurrentPolicyBase, observation, hidden_state, subkey
-    ):
-        return policy.sample(observation, hidden_state, subkey)
-
-    @nnx.jit
-    def value_fn(value_rnn: RNN, observation, hidden_state):
-        value, next_hidden_state = value_rnn(observation, hidden_state)
-        return value.flatten(), next_hidden_state
-
     trajectory_collector = TrajectoryCollector(
         envs.num_envs,
         batch_size,
         envs.single_observation_space.shape,
         envs.single_action_space.shape,
-        hidden_state_actor.shape[1:],
-        hidden_state_critic.shape[1:],
+        save_hidden_states=True,
+        hidden_actor_shape=hidden_state_actor.shape[1:],
+        hidden_critic_shape=hidden_state_critic.shape[1:],
     )
 
     obs = envs.reset()[0] if last_observation is None else last_observation
 
     accumulated_return = 0.0
+    subkeys = jax.random.split(key, batch_size)
     for step in range(batch_size):
-        key, subkey = jax.random.split(key)
-        action, new_hidden_state_actor = sample(
-            actor, obs, hidden_state_actor, subkey
+        action, new_hidden_state_actor = actor.sample(
+            obs, hidden_state_actor, subkeys[step]
         )
-        value, new_hidden_state_critic = value_fn(
-            critic, obs, hidden_state_critic
-        )
+        value, new_hidden_state_critic = critic(obs, hidden_state_critic)
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
@@ -172,7 +160,7 @@ def collect_trajectories(
             step=global_step + batch_size,
         )
 
-    value, new_hidden_state_critic = value_fn(critic, obs, hidden_state_critic)
+    value, new_hidden_state_critic = critic(obs, hidden_state_critic)
     batch = trajectory_collector.get_batch(value)
 
     return namedtuple(

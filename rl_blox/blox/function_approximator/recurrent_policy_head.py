@@ -150,6 +150,7 @@ class RecurrentSoftmaxPolicy(StochasticRecurrentPolicyBase):
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         return self.net(observation, hidden_state)
 
+    @nnx.jit
     def sample(
         self,
         observation: jnp.ndarray,
