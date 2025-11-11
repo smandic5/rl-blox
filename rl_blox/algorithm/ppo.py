@@ -11,6 +11,7 @@ from tqdm.rich import trange
 
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.gae import compute_gae
+from ..blox.vec_env_util import TrajectoryCollector
 from ..logging.logger import LoggerBase
 
 
@@ -75,59 +76,52 @@ def collect_trajectories(
         Global step count
     """
 
-    observations, actions, rewards, terminated_arr, next_values = [
-        [] for _ in range(5)
-    ]
+    trajectory_collector = TrajectoryCollector(
+        envs.num_envs,
+        batch_size,
+        envs.single_observation_space.shape,
+        envs.single_action_space.shape,
+        save_hidden_states=False,
+    )
     obs = envs.reset()[0] if last_observation is None else last_observation
 
     subkeys = jax.random.split(key, batch_size)
     for i in range(batch_size):
         action = actor.sample(obs, subkeys[i])
+        value = critic(obs)
         next_obs, reward, terminated, truncated, info = envs.step(
             np.asarray(action)
         )
+        trajectory_collector.update(
+            obs,
+            action,
+            value,
+            reward,
+            terminated,
+            truncated,
+        )
 
-        observations.append(obs[jnp.newaxis])
-        actions.append(action[jnp.newaxis])
-        rewards.append(reward[jnp.newaxis])
-
-        obs = jnp.copy(next_obs)
-        if logger is not None and "episode" in info:
+        if "episode" in info.keys():
             finished_reward_len_obs = [
-                (r, l, o)
-                for r, l, o, f in zip(
+                (r, l)
+                for r, l, f in zip(
                     info["episode"]["r"],
                     info["episode"]["l"],
-                    info["final_obs"],
                     info["_episode"],
                     strict=True,
                 )
                 if f
             ]
-            for i, (r, l, o) in enumerate(finished_reward_len_obs):
+            for i, (r, l) in enumerate(finished_reward_len_obs):
                 global_step += int(l)
-                logger.record_stat("return", float(r), step=global_step)
-                logger.start_new_episode()
-                obs = obs.at[i].set(o)
+                if logger is not None:
+                    logger.record_stat("return", float(r), step=global_step)
+                    logger.start_new_episode()
 
-        next_value = critic(obs).flatten()
-        terminated_arr.append(terminated[jnp.newaxis])
-        next_values.append(next_value[jnp.newaxis])
         obs = next_obs
 
-    def reshape_batch(batch):
-        step_idx = 0
-        env_idx = 1
-        other_indices = tuple(range(2, batch.ndim))
-        return jnp.permute_dims(
-            batch, (env_idx, step_idx) + other_indices
-        ).reshape(-1, *batch.shape[2:])
-
-    observations = jnp.concat(observations, axis=0)
-    actions = jnp.concat(actions, axis=0)
-    rewards = jnp.concat(rewards, axis=0)
-    terminated_arr = jnp.concat(terminated_arr, axis=0)
-    next_values = jnp.concat(next_values, axis=0)
+    value = critic(obs)
+    batch = trajectory_collector.get_batch(value)
 
     return namedtuple(
         "PPO_Trajectory",
@@ -141,11 +135,12 @@ def collect_trajectories(
             "global_step",
         ],
     )(
-        reshape_batch(observations),
-        reshape_batch(actions),
-        reshape_batch(rewards).squeeze(),
-        reshape_batch(terminated_arr).squeeze(),
-        reshape_batch(next_values).squeeze(),
+        batch[0],
+        batch[1],
+        batch[2],
+        batch[3],
+        # batch[4], value is not returned
+        batch[5],
         obs,
         global_step,
     )
@@ -314,10 +309,6 @@ def train_ppo(
     key = jax.random.key(seed)
     last_observation, _ = envs.reset(seed=seed)
     envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
-    assert (
-        envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
-    ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
-
     if logger is not None:
         logger.start_new_episode()
 

@@ -32,7 +32,6 @@ envs = gym.make_vec(
     env_name,
     num_envs=hparams_algorithm["num_envs"],
     vectorization_mode="sync",
-    vector_kwargs={"autoreset_mode": gym.vector.AutoresetMode.SAME_STEP},
 )
 
 features = envs.observation_space.shape[1]
