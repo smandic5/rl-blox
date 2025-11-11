@@ -22,6 +22,7 @@ def inner_loop(
     critic: nnx.Module,
     key: jnp.ndarray,
     batch_size: int = 64,
+    epochs: int = 1,
     inner_actor_lr: float = 0.001,
     inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
@@ -57,7 +58,7 @@ def inner_loop(
         reward,
         terminated,
         next_value,
-        1,
+        epochs,
     )
 
     # collect trajectory with adapted model
@@ -92,6 +93,7 @@ def train_maml_ppo(
     optimizer_critic: nnx.Optimizer,
     iterations: int = 1000,
     batch_size: int = 64,
+    epochs: int = 1,
     seed: int = 1,
     inner_actor_lr: float = 0.001,
     inner_critic_lr: float = 0.001,
@@ -101,9 +103,6 @@ def train_maml_ppo(
     # init vars
     key = jax.random.key(seed)
     envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
-    assert (
-        envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
-    ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
 
     # loop
     for iteration in trange(iterations, disable=not progress_bar):
@@ -122,6 +121,7 @@ def train_maml_ppo(
             critic_clone,
             key,
             batch_size,
+            epochs,
             inner_actor_lr,
             inner_critic_lr,
             logger,
