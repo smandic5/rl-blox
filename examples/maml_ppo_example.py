@@ -83,10 +83,7 @@ selector = UniformTaskSelector(
     jnp.arange(hparams_algorithm["train_set_size"]), key=key
 )
 
-from rl_blox.logging.logger import StandardLogger
-
 logger = AIMLogger()
-logger = StandardLogger(verbose=1)
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="MAML_PPO",
@@ -127,7 +124,8 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
 env = gym.make(
     env_name,
     desc=generate_random_map(
-        size=3, seed=env_seeds[hparams_algorithm["train_set_size"]].item()
+        size=lake_size,
+        seed=env_seeds[hparams_algorithm["train_set_size"]].item(),
     ),
     render_mode="human",
 )
