@@ -15,26 +15,35 @@ class TrajectoryCollector:
         max_steps,
         obs_shape,
         action_shape,
-        hidden_actor_shape,
-        hidden_critic_shape,
+        save_hidden_states=False,
+        hidden_actor_shape=(),
+        hidden_critic_shape=(),
     ):
         self.ptr = 0
         self.obs_shape = obs_shape
         self.action_shape = action_shape
-        self.hidden_actor_shape = hidden_actor_shape
-        self.hidden_critic_shape = hidden_critic_shape
 
         self.observations = jnp.zeros((num_envs, max_steps, *obs_shape))
         self.actions = jnp.zeros((num_envs, max_steps, *action_shape))
         self.values = jnp.zeros((num_envs, max_steps + 1))
         self.rewards = jnp.zeros((num_envs, max_steps))
         self.terminated = jnp.zeros((num_envs, max_steps))
-        self.hidden_actor = jnp.zeros(
-            (num_envs, max_steps, *hidden_actor_shape)
-        )
-        self.hidden_critic = jnp.zeros(
-            (num_envs, max_steps, *hidden_critic_shape)
-        )
+
+        self.save_hidden_states = save_hidden_states
+        if save_hidden_states:
+            self.hidden_actor_shape = hidden_actor_shape
+            self.hidden_critic_shape = hidden_critic_shape
+            self.hidden_actor = jnp.zeros(
+                (num_envs, max_steps, *hidden_actor_shape)
+            )
+            self.hidden_critic = jnp.zeros(
+                (num_envs, max_steps, *hidden_critic_shape)
+            )
+        else:
+            self.hidden_actor = None
+            self.hidden_critic = None
+            self.hidden_actor_shape = None
+            self.hidden_critic_shape = None
 
         self.invalid = jnp.zeros((num_envs, max_steps + 1), dtype=bool)
 
@@ -46,16 +55,20 @@ class TrajectoryCollector:
         reward,
         terminated,
         truncated,
-        h_actor,
-        h_critic,
+        h_actor=None,
+        h_critic=None,
     ):
         self.observations = self.observations.at[:, self.ptr].set(obs)
         self.actions = self.actions.at[:, self.ptr].set(action)
-        self.values = self.values.at[:, self.ptr].set(value)
+        self.values = self.values.at[:, self.ptr].set(value.flatten())
         self.rewards = self.rewards.at[:, self.ptr].set(reward)
         self.terminated = self.terminated.at[:, self.ptr].set(terminated)
-        self.hidden_actor = self.hidden_actor.at[:, self.ptr].set(h_actor)
-        self.hidden_critic = self.hidden_critic.at[:, self.ptr].set(h_critic)
+
+        if self.save_hidden_states:
+            self.hidden_actor = self.hidden_actor.at[:, self.ptr].set(h_actor)
+            self.hidden_critic = self.hidden_critic.at[:, self.ptr].set(
+                h_critic
+            )
 
         self.ptr += 1
         self.invalid = self.invalid.at[:, self.ptr].set(
@@ -72,8 +85,19 @@ class TrajectoryCollector:
         jnp.ndarray,
         jnp.ndarray,
     ]:
-        self.values = self.values.at[:, -1].set(next_values)
+        self.values = self.values.at[:, -1].set(next_values.flatten())
         valid = ~self.invalid[:, :-1].flatten()
+
+        if self.save_hidden_states:
+            h_actor = self.hidden_actor.reshape(-1, *self.hidden_actor_shape)[
+                valid
+            ]
+            h_critic = self.hidden_critic.reshape(
+                -1, *self.hidden_critic_shape
+            )[valid]
+        else:
+            h_actor = None
+            h_critic = None
 
         return namedtuple(
             "PPO_Trajectory",
@@ -94,8 +118,8 @@ class TrajectoryCollector:
             self.terminated.flatten()[valid],
             self.values[:, :-1].flatten()[valid],
             self.values[:, 1:].flatten()[valid],
-            self.hidden_actor.reshape(-1, *self.hidden_actor_shape)[valid],
-            self.hidden_critic.reshape(-1, *self.hidden_critic_shape)[valid],
+            h_actor,
+            h_critic,
         )
 
 

@@ -12,7 +12,8 @@ from tqdm.rich import trange
 
 from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.gae import compute_gae
-from ...logging.logger import LoggerBase
+from ...blox.multitask import TaskSelector
+from ...logging.logger import LoggerBase, MemoryLogger
 from ..ppo import collect_trajectories, ppo_loss, update_ppo
 
 
@@ -21,7 +22,9 @@ def inner_loop(
     actor: StochasticPolicyBase,
     critic: nnx.Module,
     key: jnp.ndarray,
+    current_iteration: int,
     batch_size: int = 64,
+    epochs: int = 1,
     inner_actor_lr: float = 0.001,
     inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
@@ -29,6 +32,7 @@ def inner_loop(
     update_ppo_jitted = nnx.jit(update_ppo, static_argnames="epochs")
 
     # collect trajectory
+    logger_adapting = logger if logger is None else MemoryLogger()
     key, subkey = jax.random.split(key)
     (
         observation,
@@ -38,7 +42,15 @@ def inner_loop(
         next_value,
         _,
         _,
-    ) = collect_trajectories(envs, actor, critic, subkey, batch_size, logger)
+    ) = collect_trajectories(
+        envs, actor, critic, subkey, batch_size, logger_adapting
+    )
+    total_episodes = len(logger_adapting.get_stat("return")[0]) + batch_size
+    logger.record_stat(
+        "reward_while_adapting",
+        jnp.sum(reward).item() / total_episodes,
+        step=current_iteration,
+    )
 
     # adapt model
     optimizer_actor = nnx.Optimizer(
@@ -57,10 +69,11 @@ def inner_loop(
         reward,
         terminated,
         next_value,
-        1,
+        epochs,
     )
 
     # collect trajectory with adapted model
+    logger_adapted = logger if logger is None else MemoryLogger()
     key, subkey = jax.random.split(key)
     (
         observation,
@@ -70,7 +83,15 @@ def inner_loop(
         next_value,
         _,
         _,
-    ) = collect_trajectories(envs, actor, critic, subkey, batch_size, logger)
+    ) = collect_trajectories(
+        envs, actor, critic, subkey, batch_size, logger_adapted
+    )
+    total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
+    logger.record_stat(
+        "reward_after_adapting",
+        jnp.sum(reward).item() / total_episodes,
+        step=current_iteration,
+    )
 
     # calc loss
     advs, returns = compute_gae(
@@ -85,53 +106,56 @@ def inner_loop(
 
 
 def train_maml_ppo(
-    envs: gym.vector.VectorEnv,
+    env_set: list[gym.vector.VectorEnv],
+    task_selector: TaskSelector,
     actor: StochasticPolicyBase,
     critic: nnx.Module,
     optimizer_actor: nnx.Optimizer,
     optimizer_critic: nnx.Optimizer,
     iterations: int = 1000,
     batch_size: int = 64,
+    epochs: int = 1,
     seed: int = 1,
     inner_actor_lr: float = 0.001,
     inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
+    agent_name: str = "MAML_PPO",
 ) -> tuple[StochasticPolicyBase, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
-    # init vars
     key = jax.random.key(seed)
-    envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
-    assert (
-        envs.metadata["autoreset_mode"] == gym.vector.AutoresetMode.SAME_STEP
-    ), "Vectorized Env has to be instantiated with the SAME_STEP autoreset mode."
+    for i, envs in enumerate(env_set):
+        envs.reset(seed=seed)
+        env_set[i] = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
-    # loop
     for iteration in trange(iterations, disable=not progress_bar):
-        # sample env
-        # TODO sampling with vec envs
+        task_id = task_selector.select()
+        envs = env_set[task_id]
+        envs.reset()
 
-        # clone base model
         actor_clone = nnx.clone(actor)
         critic_clone = nnx.clone(critic)
 
-        # inner loop
         loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2))
         meta_loss, (grad_actor, grad_critic) = loss_grad_fn(
             envs,
             actor_clone,
             critic_clone,
             key,
-            batch_size,
-            inner_actor_lr,
-            inner_critic_lr,
-            logger,
+            iteration,
+            batch_size=batch_size,
+            epochs=epochs,
+            inner_actor_lr=inner_actor_lr,
+            inner_critic_lr=inner_critic_lr,
+            logger=logger,
         )
 
-        # update meta models
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
 
+        task_selector.feedback(reward=meta_loss, policy=actor_clone)
         if logger is not None:
             logger.record_stat("meta_loss", meta_loss, step=iteration)
+            logger.record_epoch(f"{agent_name}_ACTOR", actor, step=iteration)
+            logger.record_epoch(f"{agent_name}_CRITIC", critic, step=iteration)
 
     return actor, critic, optimizer_actor, optimizer_critic

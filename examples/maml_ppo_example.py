@@ -1,0 +1,141 @@
+import gymnasium as gym
+import jax
+import jax.numpy as jnp
+import optax
+from flax import nnx
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
+
+from rl_blox.algorithm.meta.maml_ppo import train_maml_ppo
+from rl_blox.algorithm.ppo import train_ppo
+from rl_blox.blox.env_util import OneHotObservationWrapper
+from rl_blox.blox.function_approximator.mlp import MLP
+from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
+from rl_blox.blox.multitask import UniformTaskSelector
+from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
+from rl_blox.logging.logger import AIMLogger
+
+env_name = "FrozenLake-v1"
+lake_size = 3
+
+hparams_model = {
+    "actor_hidden_layers": [64, 64],
+    "actor_activation": "relu",
+    "actor_learning_rate": 3e-4,
+    "critic_hidden_layers": [64, 64],
+    "critic_activation": "relu",
+    "critic_learning_rate": 1e-3,
+}
+hparams_algorithm = dict(
+    num_envs=64,
+    batch_size=128,
+    iterations=1000,
+    epochs=1,
+    train_set_size=2,
+    test_set_size=1,
+    seed=1,
+)
+
+key = jax.random.key(hparams_algorithm["seed"])
+key, subkey = jax.random.split(key)
+env_set_size = (
+    hparams_algorithm["train_set_size"] + hparams_algorithm["test_set_size"]
+)
+env_seeds = jax.random.randint(subkey, (env_set_size,), 1, 100)
+env_set = [
+    gym.make_vec(
+        env_name,
+        desc=generate_random_map(size=lake_size, seed=env_seeds[i].item()),
+        num_envs=hparams_algorithm["num_envs"],
+        vectorization_mode="sync",
+    )
+    for i in range(env_set_size)
+]
+env_set = [OneHotVecObservationWrapper(envs) for envs in env_set]
+
+features = env_set[0].observation_space.shape[1]
+actions = int(env_set[0].single_action_space.n)
+
+actor = MLP(
+    features,
+    actions,
+    hparams_model["actor_hidden_layers"],
+    hparams_model["actor_activation"],
+    nnx.Rngs(hparams_algorithm["seed"]),
+)
+actor = SoftmaxPolicy(actor)
+
+critic = MLP(
+    features,
+    1,
+    hparams_model["critic_hidden_layers"],
+    hparams_model["critic_activation"],
+    nnx.Rngs(hparams_algorithm["seed"]),
+)
+
+optimizer_actor = nnx.Optimizer(
+    actor, optax.adam(hparams_model["actor_learning_rate"]), wrt=nnx.Param
+)
+optimizer_critic = nnx.Optimizer(
+    critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
+)
+
+selector = UniformTaskSelector(
+    jnp.arange(hparams_algorithm["train_set_size"]), key=key
+)
+
+from rl_blox.logging.logger import StandardLogger
+
+logger = AIMLogger()
+logger = StandardLogger(verbose=1)
+logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="MAML_PPO",
+    hparams=hparams_model | hparams_algorithm,
+)
+
+actor, critic, optimizer_actor, optimizer_critic = train_maml_ppo(
+    env_set[: hparams_algorithm["train_set_size"]],
+    selector,
+    actor,
+    critic,
+    optimizer_actor,
+    optimizer_critic,
+    iterations=hparams_algorithm["iterations"],
+    epochs=hparams_algorithm["epochs"],
+    logger=logger,
+    batch_size=hparams_algorithm["batch_size"],
+)
+
+# Adaptation
+
+envs = env_set[hparams_algorithm["train_set_size"]]
+
+actor, critic, optimizer_actor, optimizer_critic = train_ppo(
+    envs,
+    actor,
+    critic,
+    optimizer_actor,
+    optimizer_critic,
+    iterations=10,
+    epochs=1,
+    logger=None,
+    batch_size=hparams_algorithm["batch_size"],
+)
+
+# Evaluation
+
+env = gym.make(
+    env_name,
+    desc=generate_random_map(
+        size=3, seed=env_seeds[hparams_algorithm["train_set_size"]].item()
+    ),
+    render_mode="human",
+)
+env = OneHotObservationWrapper(env)
+obs, _ = env.reset(seed=hparams_algorithm["seed"])
+
+while True:
+    action = int(jnp.argmax(actor(obs)))
+    obs, reward, terminated, truncated, _ = env.step(int(action))
+    if terminated or truncated:
+        obs, _ = env.reset()

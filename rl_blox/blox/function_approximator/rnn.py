@@ -114,6 +114,7 @@ class StackedGRU(RNN):
         self.layer_sizes = hidden_nodes
         self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
 
+    @nnx.jit
     def __call__(
         self, x: jax.Array, h: jax.Array
     ) -> tuple[jax.Array, jax.Array]:
