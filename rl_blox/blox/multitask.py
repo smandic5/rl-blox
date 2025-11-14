@@ -229,3 +229,46 @@ class PolicySimilarityTaskSelector(WeightedTaskSelector):
         super().feedback(reward)
         self.policies[self.last_picked] = kwargs["policy"]
         self.recalculate_weights()
+
+
+class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
+    def __init__(
+        self,
+        tasks,
+        max_reward: float = 1,
+        progress_weight: float = 0.7,
+        **kwargs,
+    ):
+        super().__init__(tasks, weights=None, **kwargs)
+        self.last_progress = jnp.zeros(len(tasks))
+        self.learning_speed = jnp.zeros(len(tasks))
+        self.max_reward = max_reward + 1e-8
+        self.progress_weight = progress_weight
+        self.last_picked = 0
+
+    def select(self):
+        self.last_picked = super().select()
+        # print("------------------------------------------")
+        # print(f"selected: {self.last_picked}")
+        return self.last_picked
+
+    def feedback(self, reward, **kwargs):
+        progress = reward / self.max_reward
+        self.learning_speed = self.learning_speed.at[self.last_picked].set(
+            -(progress - self.last_progress[self.last_picked])
+        )
+        self.last_progress = self.last_progress.at[self.last_picked].set(
+            1 - progress
+        )
+
+        p_progress = jax.nn.softmax(self.learning_speed)
+        p_speed = jax.nn.softmax(self.last_progress)
+        self.weights = p_progress * self.progress_weight + p_speed * (
+            1 - self.progress_weight
+        )
+
+        # print(f"Score: {reward} / {self.max_reward} = {progress}")
+        # print(f"progress: {p_progress.tolist()}")
+        # print(f"speed: {p_speed.tolist()}")
+        # print(f"weights: {self.weights.tolist()}")
+        return super().feedback(reward, **kwargs)
