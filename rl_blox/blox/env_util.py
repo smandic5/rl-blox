@@ -106,3 +106,12 @@ class AppendHistoryWrapper(gym.Wrapper):
         self.last_done = np.array([done], dtype=np.float32)
 
         return self._augment_obs(obs), reward, terminated, truncated, info
+
+
+class NegativePerStepWrapper(gym.RewardWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+        self.step_punish = -0.025
+
+    def reward(self, reward):
+        return self.step_punish if reward == 0 else reward

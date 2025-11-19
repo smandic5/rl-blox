@@ -3,9 +3,12 @@ from typing import Any, Callable
 import jax.numpy as jnp
 import optax
 from flax import nnx
+from scipy.optimize import linear_sum_assignment
 
-from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.function_approximator.rnn import StackedGRU
+from ..function_approximator.mlp import MLP
+from ..function_approximator.policy_head import SoftmaxPolicy
+from ..function_approximator.recurrent_policy_head import RecurrentSoftmaxPolicy
+from ..function_approximator.rnn import StackedGRU
 
 
 def _pairwise_euclid(A: jnp.ndarray, B: jnp.ndarray) -> jnp.ndarray:
@@ -56,9 +59,15 @@ def layer_distance(layer1, layer2) -> tuple[float, jnp.ndarray]:
     w1 = _get_weights(layer1)
     w2 = _get_weights(layer2)
 
+    # print("euclid start")
     cost = _pairwise_euclid(w1, w2)
+    # print("euclid end")
 
-    mi, mj = optax.assignment.hungarian_algorithm(cost)
+    # print("hungarian start")
+    # mi, mj = optax.assignment.hungarian_algorithm(cost)
+    # print(cost)
+    mi, mj = linear_sum_assignment(cost)
+    # print("hungarian end")
 
     sorted_i = jnp.argsort(mi)
 
@@ -93,12 +102,13 @@ def get_network_distance(model1, model2) -> float:
         total_distance += dist
         # swap perceptron so that the next layer has its inputs in the correct place
         if i + 1 < len(model1_layers):
-            for swap_index in range(len(sort_i)):
-                if swap_index == sort_i[swap_index]:
-                    continue
+            for swap_index in jnp.argwhere(
+                sort_i - jnp.arange(sort_i.shape[0])
+            ):
+                print(f"Swap {swap_index} with {sort_i[swap_index]}")
                 _swap_perceptron(
                     model2_layers_cloned[i],
-                    model2_layers_cloned[i],
+                    model2_layers_cloned[i + 1],
                     swap_index,
                     sort_i[swap_index],
                 )
@@ -212,6 +222,10 @@ def _get_layers(policy) -> list:
         layers = policy.hidden_layers + [policy.output_layer]
     elif type(policy) == StackedGRU:
         layers = policy.gru_layers + [policy.output_layer]
+    elif (
+        type(policy) == SoftmaxPolicy or type(policy) == RecurrentSoftmaxPolicy
+    ):
+        layers = _get_layers(policy.net)
     else:
         raise Exception(f"Unrecognized policy type: {type(policy)}.")
     return layers

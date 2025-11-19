@@ -229,6 +229,7 @@ class PolicySimilarityTaskSelector(WeightedTaskSelector):
         super().feedback(reward)
         self.policies[self.last_picked] = kwargs["policy"]
         self.recalculate_weights()
+        # self.weights = jax.nn.softmax(self.weights - jnp.min(self.weights))
 
 
 class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):

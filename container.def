@@ -1,0 +1,9 @@
+Bootstrap: docker
+From: python:3.12.12-slim
+
+%post
+    echo "Python-Image erfolgreich eingerichtet."
+
+%runscript
+    echo "Container läuft. Starte Python-Shell."
+    exec python3

@@ -10,9 +10,15 @@ from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.env_util import OneHotObservationWrapper
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
-from rl_blox.blox.multitask import UniformTaskSelector
+from rl_blox.blox.multitask import (
+    HardTaskPrioritizationTaskSelector,
+    UniformTaskSelector,
+)
 from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
 from rl_blox.logging.logger import AIMLogger
+
+jax.config.update("jax_platforms", "cpu")
+
 
 env_name = "FrozenLake-v1"
 lake_size = 3
@@ -30,7 +36,7 @@ hparams_algorithm = dict(
     batch_size=128,
     iterations=1000,
     epochs=1,
-    train_set_size=2,
+    train_set_size=7,
     test_set_size=1,
     seed=1,
 )
@@ -79,8 +85,14 @@ optimizer_critic = nnx.Optimizer(
     critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
 )
 
-selector = UniformTaskSelector(
-    jnp.arange(hparams_algorithm["train_set_size"]), key=key
+selector = HardTaskPrioritizationTaskSelector(
+    jnp.arange(hparams_algorithm["train_set_size"]),
+    max_reward=(1 / (lake_size - 1) ** 2)
+    * hparams_algorithm["batch_size"]
+    * hparams_algorithm["num_envs"]
+    * 0.6,
+    progress_weight=0.8,
+    key=key,
 )
 
 logger = AIMLogger()

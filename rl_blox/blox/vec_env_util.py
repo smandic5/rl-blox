@@ -227,3 +227,14 @@ class AppendHistoryVecEnvWrapper(gym.vector.VectorWrapper):
 
         # Return augmented observation
         return self._augment_obs(obs), rewards, terminated, truncated, infos
+
+
+class NegativePerStepVecWrapper(gym.vector.VectorRewardWrapper):
+    def __init__(self, env: gym.vector.VectorEnv):
+        super().__init__(env)
+        self.step_punish = -0.025
+
+    def rewards(self, rewards):
+        return np.where(
+            rewards == 0, np.ones(rewards.shape) * self.step_punish, rewards
+        )

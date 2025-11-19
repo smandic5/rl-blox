@@ -28,48 +28,47 @@ def inner_loop(
     inner_actor_lr: float = 0.001,
     inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
-):
-    update_ppo_jitted = nnx.jit(update_ppo, static_argnames="epochs")
+) -> tuple[float, float]:
+    for i in range(epochs):
+        # collect trajectory
+        logger_adapting = logger if logger is None else MemoryLogger()
+        key, subkey = jax.random.split(key)
+        (
+            observation,
+            action,
+            reward,
+            terminated,
+            next_value,
+            _,
+            _,
+        ) = collect_trajectories(
+            envs, actor, critic, subkey, batch_size, logger_adapting
+        )
 
-    # collect trajectory
-    logger_adapting = logger if logger is None else MemoryLogger()
-    key, subkey = jax.random.split(key)
-    (
-        observation,
-        action,
-        reward,
-        terminated,
-        next_value,
-        _,
-        _,
-    ) = collect_trajectories(
-        envs, actor, critic, subkey, batch_size, logger_adapting
-    )
+        # adapt model
+        optimizer_actor = nnx.Optimizer(
+            actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
+        )
+        optimizer_critic = nnx.Optimizer(
+            critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
+        )
+        loss_val = update_ppo(
+            actor,
+            critic,
+            optimizer_actor,
+            optimizer_critic,
+            observation,
+            action,
+            reward,
+            terminated,
+            next_value,
+            1,
+        )
     total_episodes = len(logger_adapting.get_stat("return")[0]) + batch_size
     logger.record_stat(
         "reward_while_adapting",
         jnp.sum(reward).item() / total_episodes,
         step=current_iteration,
-    )
-
-    # adapt model
-    optimizer_actor = nnx.Optimizer(
-        actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
-    )
-    optimizer_critic = nnx.Optimizer(
-        critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
-    )
-    loss_val = update_ppo_jitted(
-        actor,
-        critic,
-        optimizer_actor,
-        optimizer_critic,
-        observation,
-        action,
-        reward,
-        terminated,
-        next_value,
-        epochs,
     )
 
     # collect trajectory with adapted model
@@ -102,7 +101,7 @@ def inner_loop(
         actor, critic, logp, observation, action, advs, returns
     )
 
-    return adapted_loss_val
+    return adapted_loss_val, jnp.sum(reward).item()
 
 
 def train_maml_ppo(
@@ -135,8 +134,10 @@ def train_maml_ppo(
         actor_clone = nnx.clone(actor)
         critic_clone = nnx.clone(critic)
 
-        loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2))
-        meta_loss, (grad_actor, grad_critic) = loss_grad_fn(
+        loss_grad_fn = nnx.value_and_grad(
+            inner_loop, argnums=(1, 2), has_aux=True
+        )
+        (meta_loss, reward), (grad_actor, grad_critic) = loss_grad_fn(
             envs,
             actor_clone,
             critic_clone,
@@ -152,7 +153,7 @@ def train_maml_ppo(
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
 
-        task_selector.feedback(reward=meta_loss, policy=actor_clone)
+        task_selector.feedback(reward=reward, policy=actor_clone)
         if logger is not None:
             logger.record_stat("meta_loss", meta_loss, step=iteration)
             logger.record_epoch(f"{agent_name}_ACTOR", actor, step=iteration)
