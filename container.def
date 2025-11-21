@@ -1,9 +1,20 @@
 Bootstrap: docker
 From: python:3.12.12-slim
 
+%files
+    ./ /opt/rl-blox
+
 %post
-    echo "Python-Image erfolgreich eingerichtet."
+    echo "Installing Python dependencies..."
+    cd /opt/rl-blox
+    ls
+
+    # Install pip packages
+    pip install --no-cache-dir -e .
+    pip install --no-cache-dir aim ott-jax
+
+    echo "Python-Image configured."
 
 %runscript
-    echo "Container läuft. Starte Python-Shell."
+    echo "Container running. Starting Python-Shell."
     exec python3

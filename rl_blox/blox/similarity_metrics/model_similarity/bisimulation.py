@@ -79,7 +79,7 @@ def kantorovich_distance_ott(
     prob = linear_problem.LinearProblem(geom, a=p, b=q)
     solver = sinkhorn.Sinkhorn()
     out = solver(prob)
-    print(out.reg_ot_cost)
+    # print(out.reg_ot_cost)
     return out.reg_ot_cost
 
 
@@ -111,7 +111,7 @@ def bisimulation_distance(R_i, R_j, P_i, P_j, c=0.5, tol=1e-6, max_iter=1000):
     )
     d = np.zeros((n_i_states, n_j_states))
     for it in range(max_iter):
-        print("Iteration:", it)
+        # print("Iteration:", it)
         d_new = np.zeros_like(d)
         for i in range(n_i_states):
             for j in range(n_j_states):
