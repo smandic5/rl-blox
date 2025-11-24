@@ -5,6 +5,23 @@ import jax
 import jax.numpy as jnp
 from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
+from rl_blox.blox.env_util import (
+    AppendHistoryWrapper,
+    NegativePerStepWrapper,
+    OneHotObservationWrapper,
+)
+from rl_blox.blox.vec_env_util import (
+    AppendHistoryVecEnvWrapper,
+    NegativePerStepVecWrapper,
+    OneHotVecObservationWrapper,
+)
+
+vec_env_wrappers = [
+    OneHotVecObservationWrapper,
+    NegativePerStepVecWrapper,
+]
+env_wrappers = [OneHotObservationWrapper, NegativePerStepWrapper]
+
 
 def create_fl(
     num_sub_envs: int,
@@ -14,17 +31,18 @@ def create_fl(
     vectorization_mode: str = "sync",
     lake_size: int = 4,
 ) -> gym.vector.VectorEnv | gym.vector.VectorWrapper:
+    random_map_gen = generate_random_map(size=lake_size, seed=seed)
     if is_vec:
         envs = gym.make_vec(
             "FrozenLake-v1",
-            desc=generate_random_map(size=lake_size, seed=seed),
+            desc=random_map_gen,
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
         )
     else:
         envs = gym.make(
             "FrozenLake-v1",
-            desc=generate_random_map(size=lake_size, seed=seed),
+            desc=random_map_gen,
         )
     for wrapper in wrappers:
         envs = wrapper(envs)
@@ -54,27 +72,33 @@ def create_fl_set(
 
 
 def create_vectorized_fl_from_hparams(
+    set_size: int,
     hparams_algorithm: dict,
-    wrappers: list[gym.vector.VectorWrapper],
+    hparams_env: dict,
     key: jnp.ndarray,
     is_vec: bool = True,
+    wrappers: list[gym.vector.VectorWrapper] = [],
     ignore_wrappers: bool = False,
-    lake_size: int = 4,
+    recurrent_model: bool = False,
 ):
     seeds = jax.random.randint(
         key,
-        hparams_algorithm["set_size_train"]
-        + hparams_algorithm["set_size_test"],
+        set_size,
         minval=1,
         maxval=1000,
     ).tolist()
 
+    wrappers += vec_env_wrappers if is_vec else env_wrappers
+    if recurrent_model:
+        wrappers += [
+            AppendHistoryVecEnvWrapper if is_vec else AppendHistoryWrapper
+        ]
+
     return create_fl_set(
-        hparams_algorithm["set_size_train"]
-        + hparams_algorithm["set_size_test"],
+        set_size,
         hparams_algorithm["num_envs"],
         seeds,
         wrappers=[] if ignore_wrappers else wrappers,
         is_vec=is_vec,
-        lake_size=lake_size,
+        lake_size=hparams_env["lake_size"],
     )

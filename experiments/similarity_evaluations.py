@@ -8,6 +8,12 @@ import orbax.checkpoint as ocp
 from flax import nnx
 from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
+from experiments.similarity_trainer import (
+    create_policies,
+    get_logger,
+    get_num_features_actions,
+    get_task_selector,
+)
 from rl_blox.algorithm.meta.maml_ppo import train_maml_ppo
 from rl_blox.algorithm.ppo import train_ppo
 from rl_blox.blox.adaptation_metrics import (
@@ -25,19 +31,13 @@ from rl_blox.blox.multitask import (
     UniformTaskSelector,
 )
 from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
-from rl_blox.logging.logger import (
-    AIMLogger,
+from rl_blox.logging.logger import (  # AIMLogger,
     LoggerList,
     MemoryLogger,
     StandardLogger,
 )
-from similarity_experiments import (
-    create_policies,
-    get_logger,
-    get_num_features_actions,
-    get_task_selector,
-)
-from sven_master.hparams import (
+
+from .hparams import (
     MAML_NAME,
     RL2_NAME,
     algorithm_to_use,
@@ -106,7 +106,7 @@ def eval_task_selector(
         logger = LoggerList(
             [
                 memory_logger,
-                AIMLogger(),
+                # AIMLogger(),
                 # StandardLogger(verbose=1),
             ]
         )
@@ -162,9 +162,9 @@ def eval_task_selector(
 
 def load_weights(model, name):
     checkpointer = ocp.StandardCheckpointer()
-    state = checkpointer.restore(
-        f"{os.path.abspath(checkpoint_path)}/{name}", target=nnx.state(model)
-    )
+    path = f"{os.path.abspath(checkpoint_path)}\\{name}"
+    print(os.listdir(path))
+    state = checkpointer.restore(path, target=nnx.state(model))
     nnx.update(model, state)
 
 
