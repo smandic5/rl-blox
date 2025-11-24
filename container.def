@@ -2,15 +2,15 @@ Bootstrap: docker
 From: python:3.12.12-slim
 
 %files
-    ./ /opt/rl-blox
+    requirements.txt /opt/rl-blox/requirements.txt
 
 %post
     echo "Installing Python dependencies..."
-    cd /opt/rl-blox
     ls
 
     # Install pip packages
-    pip install --no-cache-dir -e .
+    python3 -m pip install --upgrade pip
+    pip install --no-cache-dir -r /opt/rl-blox/requirements.txt
     pip install --no-cache-dir aim ott-jax
 
     echo "Python-Image configured."

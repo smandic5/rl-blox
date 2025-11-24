@@ -12,7 +12,7 @@ from tqdm.rich import trange
 
 from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.gae import compute_gae
-from ...blox.multitask import TaskSelector
+from ...blox.multitask import TaskSelector, WeightedTaskSelector
 from ...logging.logger import LoggerBase, MemoryLogger
 from ..ppo import collect_trajectories, ppo_loss, update_ppo
 
@@ -29,6 +29,8 @@ def inner_loop(
     inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
 ) -> tuple[float, float]:
+    adapting_step = 0
+    last_observation = envs.reset()[0]
     for i in range(epochs):
         # collect trajectory
         logger_adapting = logger if logger is None else MemoryLogger()
@@ -39,10 +41,17 @@ def inner_loop(
             reward,
             terminated,
             next_value,
-            _,
-            _,
+            last_observation,
+            adapting_step,
         ) = collect_trajectories(
-            envs, actor, critic, subkey, batch_size, logger_adapting
+            envs,
+            actor,
+            critic,
+            subkey,
+            batch_size,
+            logger_adapting,
+            last_observation,
+            adapting_step,
         )
 
         # adapt model
@@ -126,10 +135,17 @@ def train_maml_ppo(
         envs.reset(seed=seed)
         env_set[i] = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
+    is_weighted_ts = type(task_selector) == WeightedTaskSelector
+
     for iteration in trange(iterations, disable=not progress_bar):
         task_id = task_selector.select()
         envs = env_set[task_id]
         envs.reset()
+        if logger is not None:
+            logger.record_stat("chosen_environment", task_id, step=iteration)
+            if is_weighted_ts:
+                for i, w in enumerate(task_selector.weights):
+                    logger.record_stat(f"env_{i}_prob", w, step=iteration)
 
         actor_clone = nnx.clone(actor)
         critic_clone = nnx.clone(critic)
@@ -156,6 +172,10 @@ def train_maml_ppo(
         task_selector.feedback(reward=reward, policy=actor_clone)
         if logger is not None:
             logger.record_stat("meta_loss", meta_loss, step=iteration)
+            logger.record_stat(
+                f"env_{task_id}_meta_loss", meta_loss, step=iteration
+            )
+            logger.record_stat(f"env_{task_id}_reward", reward, step=iteration)
             logger.record_epoch(f"{agent_name}_ACTOR", actor, step=iteration)
             logger.record_epoch(f"{agent_name}_CRITIC", critic, step=iteration)
 

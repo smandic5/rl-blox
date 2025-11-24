@@ -57,7 +57,7 @@ def train_with_task_selector(hparams_task_selector: dict, name: str):
     )
 
     # train
-    train_func = get_train_func(name)
+    train_func = get_train_func()
     actor, critic, optimizer_actor, optimizer_critic = train_func(
         vec_env_set,
         task_selector,

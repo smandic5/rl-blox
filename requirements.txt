@@ -6,6 +6,6 @@ optax
 distrax
 chex
 tqdm
-flax
+flax<=0.11.2
 matplotlib
 pre-commit
