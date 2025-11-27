@@ -103,6 +103,3 @@ def get_logger(algorithm_name: str):
         algorithm_name + "_CRITIC", save_frequency
     )
     return logger
-
-
-get_logger = partial(get_logger, algorithm_name=algorithm_to_use)
