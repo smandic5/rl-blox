@@ -84,7 +84,6 @@ def create_vectorized_fl_from_hparams(
     hparams_env: dict,
     key: jnp.ndarray,
     is_vec: bool = True,
-    wrappers: list[gym.vector.VectorWrapper] = [],
     ignore_wrappers: bool = False,
     recurrent_model: bool = False,
 ):
@@ -95,7 +94,7 @@ def create_vectorized_fl_from_hparams(
         maxval=1000,
     ).tolist()
 
-    wrappers += vec_env_wrappers if is_vec else env_wrappers
+    wrappers = vec_env_wrappers if is_vec else env_wrappers
     if recurrent_model:
         wrappers += [
             AppendHistoryVecEnvWrapper if is_vec else AppendHistoryWrapper
