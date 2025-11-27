@@ -25,7 +25,6 @@ hparams_algorithm = dict(
     iterations=5002,
     set_size_train=5,
     epochs=10,
-    seed=1,
 )
 
 hparams_eval = dict(
