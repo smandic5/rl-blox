@@ -52,7 +52,7 @@ def train_with_task_selector(hparams_task_selector: dict, name: str):
     logger = get_logger()
     logger.define_experiment(
         env_name=params_env["env_name"],
-        algorithm_name=algorithm_to_use,
+        algorithm_name=name,
         hparams=hparams_model | hparams_algorithm | params_env,
     )
 
