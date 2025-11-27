@@ -135,7 +135,7 @@ def train_maml_ppo(
         envs.reset(seed=seed)
         env_set[i] = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
-    is_weighted_ts = type(task_selector) == WeightedTaskSelector
+    is_weighted_ts = isinstance(task_selector, WeightedTaskSelector)
 
     for iteration in trange(iterations, disable=not progress_bar):
         task_id = task_selector.select()
