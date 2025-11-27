@@ -56,6 +56,10 @@ def create_fl_set(
     is_vec: bool = True,
     vectorization_mode: str = "sync",
     lake_size: int = 4,
+    step_success_rate: float = 1.0,
+    reward_goal: int = 1,
+    reward_frozen: int = -0.025,
+    reward_hole: int = -1,
 ) -> list[gym.vector.VectorEnv | gym.vector.VectorWrapper]:
     return [
         create_fl(
@@ -65,6 +69,10 @@ def create_fl_set(
             is_vec,
             vectorization_mode,
             lake_size,
+            step_success_rate,
+            reward_goal,
+            reward_frozen,
+            reward_hole,
         )
         for i in range(num_envs)
     ]
