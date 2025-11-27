@@ -7,6 +7,10 @@ checkpoint_path = "./experiments/checkpoints/"
 params_frozen_lake = dict(
     env_name="FrozenLake-v1",
     lake_size=4,
+    step_success_rate=1.0,
+    reward_goal=1,
+    reward_frozen=-0.025,
+    reward_hole=-1,
 )
 params_env = params_frozen_lake
 

@@ -5,22 +5,14 @@ import jax
 import jax.numpy as jnp
 from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
-from rl_blox.blox.env_util import (
-    AppendHistoryWrapper,
-    NegativePerStepWrapper,
-    OneHotObservationWrapper,
-)
+from rl_blox.blox.env_util import AppendHistoryWrapper, OneHotObservationWrapper
 from rl_blox.blox.vec_env_util import (
     AppendHistoryVecEnvWrapper,
-    NegativePerStepVecWrapper,
     OneHotVecObservationWrapper,
 )
 
-vec_env_wrappers = [
-    OneHotVecObservationWrapper,
-    NegativePerStepVecWrapper,
-]
-env_wrappers = [OneHotObservationWrapper, NegativePerStepWrapper]
+vec_env_wrappers = [OneHotVecObservationWrapper]
+env_wrappers = [OneHotObservationWrapper]
 
 
 def create_fl(
@@ -30,12 +22,19 @@ def create_fl(
     is_vec: bool = True,
     vectorization_mode: str = "sync",
     lake_size: int = 4,
+    step_success_rate: float = 1.0,
+    reward_goal: int = 1,
+    reward_frozen: int = -0.025,
+    reward_hole: int = -1,
 ) -> gym.vector.VectorEnv | gym.vector.VectorWrapper:
     random_map_gen = generate_random_map(size=lake_size, seed=seed)
     if is_vec:
         envs = gym.make_vec(
             "FrozenLake-v1",
             desc=random_map_gen,
+            is_slippery=step_success_rate < 1,
+            success_rate=step_success_rate,
+            reward_schedule=(reward_goal, reward_frozen, reward_hole),
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
         )
@@ -101,4 +100,8 @@ def create_vectorized_fl_from_hparams(
         wrappers=[] if ignore_wrappers else wrappers,
         is_vec=is_vec,
         lake_size=hparams_env["lake_size"],
+        step_success_rate=hparams_env["lake_size"],
+        reward_goal=hparams_env["reward_goal"],
+        reward_frozen=hparams_env["reward_frozen"],
+        reward_hole=hparams_env["reward_hole"],
     )
