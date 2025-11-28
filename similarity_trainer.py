@@ -3,15 +3,9 @@ import sys
 import jax
 
 from experiments.factory_getters import (
-    create_env,
-    create_vec_env,
-    get_logger,
-    get_num_features_actions,
-    get_policies,
     get_task_selector_config,
-    get_train_func,
+    prepare_training,
 )
-from experiments.helpers.task_selector_factory import get_task_selector
 from experiments.hparams import (
     algorithm_to_use,
     hparams_algorithm,
@@ -23,41 +17,19 @@ jax.config.update("jax_platforms", "cpu")
 
 
 def train_with_task_selector(hparams_task_selector: dict, name: str, seed: int):
-    # init key
-    prep_key = jax.random.key(seed)
-    prep_key, subkey = jax.random.split(prep_key)
-
-    # init env
-    vec_env_set = create_vec_env(key=subkey)
-    env_set = create_env(key=subkey, ignore_wrappers=True)
-    features, actions = get_num_features_actions(vec_env_set[0])
-
-    # init models
-    prep_key, subkey = jax.random.split(prep_key)
-    actor, critic, optimizer_actor, optimizer_critic = get_policies(
-        features=features, actions=actions, key=subkey
-    )
-
-    # init task selector
-    prep_key, subkey = jax.random.split(prep_key)
-    task_selector = get_task_selector(
-        hparams_task_selector,
-        hparams_algorithm,
-        subkey,
+    (
+        prep_key,
+        vec_env_set,
         actor,
-        env_set,
-    )
-
-    # init logger
-    logger = get_logger(name)
-    logger.define_experiment(
-        env_name=params_env["env_name"],
-        algorithm_name=name,
-        hparams=hparams_model | hparams_algorithm | params_env | {"seed": seed},
-    )
+        critic,
+        optimizer_actor,
+        optimizer_critic,
+        task_selector,
+        logger,
+        train_func,
+    ) = prepare_training(hparams_task_selector, name, seed)
 
     # train
-    train_func = get_train_func()
     actor, critic, optimizer_actor, optimizer_critic = train_func(
         vec_env_set,
         task_selector,

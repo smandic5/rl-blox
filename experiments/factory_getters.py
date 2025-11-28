@@ -2,6 +2,8 @@ from functools import partial
 from typing import Callable
 
 import gymnasium as gym
+import jax
+import jax.numpy as jnp
 
 from rl_blox.algorithm.meta.maml_ppo import train_maml_ppo
 from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
@@ -11,6 +13,7 @@ from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
 from .helpers.policy_factory import create_policies
 from .helpers.task_selector_configurations import get_ts_config
+from .helpers.task_selector_factory import get_task_selector
 from .hparams import (
     MAML_NAME,
     RL2_NAME,
@@ -19,6 +22,7 @@ from .hparams import (
     hparams_algorithm,
     hparams_eval,
     hparams_model,
+    params_env,
     params_frozen_lake,
     save_frequency,
 )
@@ -103,3 +107,50 @@ def get_logger(algorithm_name: str):
         algorithm_name + "_CRITIC", save_frequency
     )
     return logger
+
+
+# ------------------- Complete training setup
+
+
+def prepare_training(hparams_task_selector, name, seed):
+    prep_key = jax.random.key(seed)
+    prep_key, subkey = jax.random.split(prep_key)
+
+    vec_env_set = create_vec_env(key=subkey)
+    env_set = create_env(key=subkey, ignore_wrappers=True)
+    features, actions = get_num_features_actions(vec_env_set[0])
+
+    prep_key, subkey = jax.random.split(prep_key)
+    actor, critic, optimizer_actor, optimizer_critic = get_policies(
+        features=features, actions=actions, key=subkey
+    )
+
+    prep_key, subkey = jax.random.split(prep_key)
+    task_selector = get_task_selector(
+        hparams_task_selector,
+        hparams_algorithm,
+        subkey,
+        actor,
+        env_set,
+    )
+
+    logger = get_logger(name)
+    logger.define_experiment(
+        env_name=params_env["env_name"],
+        algorithm_name=name,
+        hparams=hparams_model | hparams_algorithm | params_env | {"seed": seed},
+    )
+
+    train_func = get_train_func()
+
+    return (
+        prep_key,
+        vec_env_set,
+        actor,
+        critic,
+        optimizer_actor,
+        optimizer_critic,
+        task_selector,
+        logger,
+        train_func,
+    )

@@ -32,7 +32,8 @@ hparams_algorithm = dict(
 )
 
 hparams_eval = dict(
-    iterations=5000,
-    set_size_test=1,
+    seed_change_by=10,
+    iterations=100,
+    set_size_test=2,
     epochs=1,
 )
