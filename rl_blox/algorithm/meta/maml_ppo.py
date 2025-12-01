@@ -31,6 +31,13 @@ def inner_loop(
 ) -> tuple[float, float]:
     adapting_step = 0
     last_observation = envs.reset()[0]
+    # adapt model
+    optimizer_actor = nnx.Optimizer(
+        actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
+    )
+    optimizer_critic = nnx.Optimizer(
+        critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
+    )
     for i in range(epochs):
         # collect trajectory
         logger_adapting = logger if logger is None else MemoryLogger()
@@ -54,13 +61,6 @@ def inner_loop(
             adapting_step,
         )
 
-        # adapt model
-        optimizer_actor = nnx.Optimizer(
-            actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
-        )
-        optimizer_critic = nnx.Optimizer(
-            critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
-        )
         loss_val = update_ppo(
             actor,
             critic,
@@ -115,6 +115,20 @@ def inner_loop(
     return adapted_loss_val, jnp.sum(reward).item()
 
 
+loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2), has_aux=True)
+
+
+import os
+
+import psutil
+
+
+def print_memory_usage(i=None):
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss  # Resident Set Size in bytes
+    print(f"Iteration: {i}; Memory usage: {mem / (1024 ** 2):.2f} MB")
+
+
 def train_maml_ppo(
     env_set: list[gym.vector.VectorEnv],
     task_selector: TaskSelector,
@@ -140,6 +154,7 @@ def train_maml_ppo(
     is_weighted_ts = isinstance(task_selector, WeightedTaskSelector)
 
     for iteration in trange(iterations, disable=not progress_bar):
+        print_memory_usage(iteration)
         task_id = task_selector.select()
         envs = env_set[task_id]
         envs.reset()
@@ -152,9 +167,6 @@ def train_maml_ppo(
         actor_clone = nnx.clone(actor)
         critic_clone = nnx.clone(critic)
 
-        loss_grad_fn = nnx.value_and_grad(
-            inner_loop, argnums=(1, 2), has_aux=True
-        )
         (meta_loss, reward), (grad_actor, grad_critic) = loss_grad_fn(
             envs,
             actor_clone,

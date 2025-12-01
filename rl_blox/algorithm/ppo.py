@@ -202,6 +202,9 @@ def ppo_loss(
     )
 
 
+loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
+
+
 @partial(nnx.jit, static_argnames="epochs")
 def update_ppo(
     actor: StochasticPolicyBase,
@@ -245,7 +248,6 @@ def update_ppo(
         reward, critic(observation).flatten(), next_value, terminated
     )
     logp = actor.log_probability(observation, action)
-    loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
 
     for _ in range(epochs):
         (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
