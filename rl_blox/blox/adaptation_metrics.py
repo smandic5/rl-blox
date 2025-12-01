@@ -1,3 +1,4 @@
+from functools import partial
 from math import isnan
 
 import jax
@@ -37,14 +38,17 @@ class AdaptationTracker:
         return plateaued
 
 
+@partial(jax.jit, static_argnames="start_steps")
 def jumpstart(values: jnp.ndarray, start_steps: int = 5) -> float:
     return jnp.average(values[:start_steps]).item()
 
 
+@partial(jax.jit, static_argnames="end_steps")
 def asymptotic_performance(values: jnp.ndarray, end_steps: int = 5) -> float:
     return jnp.average(values[-end_steps:]).item()
 
 
+@jax.jit
 def total_reward(values: jnp.ndarray) -> float:
     return jnp.sum(values).item()
 
