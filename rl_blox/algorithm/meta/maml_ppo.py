@@ -73,12 +73,13 @@ def inner_loop(
             next_value,
             1,
         )
-    total_episodes = len(logger_adapting.get_stat("return")[0]) + batch_size
-    logger.record_stat(
-        "reward_while_adapting",
-        jnp.sum(reward).item() / total_episodes,
-        step=current_iteration,
-    )
+    if logger is not None:
+        total_episodes = len(logger_adapting.get_stat("return")[0]) + batch_size
+        logger.record_stat(
+            "reward_while_adapting",
+            jnp.sum(reward).item() / total_episodes,
+            step=current_iteration,
+        )
 
     # collect trajectory with adapted model
     logger_adapted = logger if logger is None else MemoryLogger()
@@ -94,12 +95,13 @@ def inner_loop(
     ) = collect_trajectories(
         envs, actor, critic, subkey, batch_size, logger_adapted
     )
-    total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
-    logger.record_stat(
-        "reward_after_adapting",
-        jnp.sum(reward).item() / total_episodes,
-        step=current_iteration,
-    )
+    if logger is not None:
+        total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
+        logger.record_stat(
+            "reward_after_adapting",
+            jnp.sum(reward).item() / total_episodes,
+            step=current_iteration,
+        )
 
     # calc loss
     advs, returns = compute_gae(
