@@ -9,6 +9,6 @@
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:0
-#SBATCH -D /mnt/beegfs/home/smandic/rl-blox
+#SBATCH -D /mnt/beegfs/home/smandic/rl-blox/
 
-singularity exec /mnt/beegfs/public/images/metablox.sif python example/maml_ppo.py
+singularity exec /mnt/beegfs/public/images/metablox.sif python maml_ppo_example.py
