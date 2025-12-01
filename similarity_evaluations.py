@@ -124,9 +124,9 @@ def adapt(alg_name, vec_env_set, actor, critic, task_i, memory_logger):
 
 
 def calculate_eval_metrics(x, y, name, task_i, epoch):
-    js = jumpstart(y, hparams_algorithm["batch_size"])
-    ap = asymptotic_performance(y, hparams_algorithm["batch_size"])
-    tr = total_reward(y)
+    js = jumpstart(y, hparams_algorithm["batch_size"]).item()
+    ap = asymptotic_performance(y, hparams_algorithm["batch_size"]).item()
+    tr = total_reward(y).item()
 
     print(f"{name} on task {task_i} from epoch {epoch}")
     print(f"Jumpstart: {js}")

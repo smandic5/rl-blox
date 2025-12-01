@@ -40,17 +40,17 @@ class AdaptationTracker:
 
 @partial(jax.jit, static_argnames="start_steps")
 def jumpstart(values: jnp.ndarray, start_steps: int = 5) -> float:
-    return jnp.average(values[:start_steps]).item()
+    return jnp.average(values[:start_steps])
 
 
 @partial(jax.jit, static_argnames="end_steps")
 def asymptotic_performance(values: jnp.ndarray, end_steps: int = 5) -> float:
-    return jnp.average(values[-end_steps:]).item()
+    return jnp.average(values[-end_steps:])
 
 
 @jax.jit
 def total_reward(values: jnp.ndarray) -> float:
-    return jnp.sum(values).item()
+    return jnp.sum(values)
 
 
 def area_ratio(values: jnp.ndarray, values_base: jnp.ndarray) -> float:
