@@ -15,13 +15,14 @@ from rl_blox.blox.multitask import (
     UniformTaskSelector,
 )
 from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
-from rl_blox.logging.logger import AIMLogger
+from rl_blox.logging.logger import AIMLogger, MemoryLogger
 
 jax.config.update("jax_platforms", "cpu")
 
 
 env_name = "FrozenLake-v1"
-lake_size = 3
+lake_size = 4
+reward_model = (1.0, 0.0, -1.0)
 
 hparams_model = {
     "actor_hidden_layers": [64, 64],
@@ -32,11 +33,11 @@ hparams_model = {
     "critic_learning_rate": 1e-3,
 }
 hparams_algorithm = dict(
-    num_envs=64,
-    batch_size=128,
-    iterations=1000,
-    epochs=1,
-    train_set_size=7,
+    num_envs=16,
+    batch_size=100,
+    iterations=70,
+    epochs=10,
+    train_set_size=1,
     test_set_size=1,
     seed=1,
 )
@@ -47,12 +48,17 @@ env_set_size = (
     hparams_algorithm["train_set_size"] + hparams_algorithm["test_set_size"]
 )
 env_seeds = jax.random.randint(subkey, (env_set_size,), 1, 100)
+desc = generate_random_map(size=lake_size, seed=env_seeds[0].item())
+print(desc)
 env_set = [
     gym.make_vec(
         env_name,
-        desc=generate_random_map(size=lake_size, seed=env_seeds[i].item()),
+        desc=desc,
         num_envs=hparams_algorithm["num_envs"],
         vectorization_mode="sync",
+        is_slippery=False,
+        success_rate=1.0,
+        reward_schedule=reward_model,
     )
     for i in range(env_set_size)
 ]
@@ -117,7 +123,14 @@ actor, critic, optimizer_actor, optimizer_critic = train_maml_ppo(
 
 # Adaptation
 
-envs = env_set[hparams_algorithm["train_set_size"]]
+envs = env_set[0]
+
+memory_logger = MemoryLogger()
+memory_logger.define_experiment(
+    env_name=env_name,
+    algorithm_name="MAML_PPO",
+    hparams=hparams_model | hparams_algorithm,
+)
 
 actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     envs,
@@ -125,20 +138,44 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     critic,
     optimizer_actor,
     optimizer_critic,
-    iterations=10,
-    epochs=1,
-    logger=None,
+    iterations=100,
+    epochs=5,
+    logger=memory_logger,
     batch_size=hparams_algorithm["batch_size"],
 )
+
+from rl_blox.blox.adaptation_metrics import (
+    asymptotic_performance,
+    jumpstart,
+    total_reward,
+)
+
+x, y = memory_logger.get_stat("return")
+js = jumpstart(y, hparams_algorithm["batch_size"])
+ap = asymptotic_performance(y, hparams_algorithm["batch_size"])
+tr = total_reward(y)
+
+print(f"Jumpstart: {js}")
+print(f"Asymptotic Performance: {ap}")
+print(f"Total Reward: {tr}")
+
+x, y = memory_logger.get_stat("success")
+js = jumpstart(y, hparams_algorithm["batch_size"])
+ap = asymptotic_performance(y, hparams_algorithm["batch_size"])
+tr = total_reward(y)
+
+print(f"Jumpstart: {js}")
+print(f"Asymptotic Performance: {ap}")
+print(f"Total Reward: {tr}")
 
 # Evaluation
 
 env = gym.make(
     env_name,
-    desc=generate_random_map(
-        size=lake_size,
-        seed=env_seeds[hparams_algorithm["train_set_size"]].item(),
-    ),
+    desc=desc,
+    is_slippery=False,
+    success_rate=1.0,
+    reward_schedule=reward_model,
     render_mode="human",
 )
 env = OneHotObservationWrapper(env)

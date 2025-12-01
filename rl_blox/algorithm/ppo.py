@@ -116,6 +116,9 @@ def collect_trajectories(
                 global_step += int(l)
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
+                    logger.record_stat(
+                        "success", reward == 1.0, step=global_step
+                    )
                     logger.start_new_episode()
 
         obs = next_obs
