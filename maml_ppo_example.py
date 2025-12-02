@@ -34,9 +34,9 @@ hparams_model = {
 }
 hparams_algorithm = dict(
     num_envs=16,
-    batch_size=100,
-    iterations=70,
-    epochs=10,
+    batch_size=128,
+    iterations=500,
+    epochs=20,
     train_set_size=1,
     test_set_size=1,
     seed=1,
@@ -91,7 +91,7 @@ optimizer_critic = nnx.Optimizer(
     critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
 )
 
-selector = HardTaskPrioritizationTaskSelector(
+"""selector = HardTaskPrioritizationTaskSelector(
     jnp.arange(hparams_algorithm["train_set_size"]),
     max_reward=(1 / (lake_size - 1) ** 2)
     * hparams_algorithm["batch_size"]
@@ -99,6 +99,9 @@ selector = HardTaskPrioritizationTaskSelector(
     * 0.6,
     progress_weight=0.8,
     key=key,
+)"""
+selector = UniformTaskSelector(
+    jnp.arange(hparams_algorithm["train_set_size"]), key=key
 )
 
 logger = AIMLogger()
@@ -151,18 +154,18 @@ from rl_blox.blox.adaptation_metrics import (
 )
 
 x, y = memory_logger.get_stat("return")
-js = jumpstart(y, hparams_algorithm["batch_size"])
-ap = asymptotic_performance(y, hparams_algorithm["batch_size"])
-tr = total_reward(y)
+js = jumpstart(y, hparams_algorithm["batch_size"]).item()
+ap = asymptotic_performance(y, hparams_algorithm["batch_size"]).item()
+tr = total_reward(y).item()
 
 print(f"Jumpstart: {js}")
 print(f"Asymptotic Performance: {ap}")
 print(f"Total Reward: {tr}")
 
 x, y = memory_logger.get_stat("success")
-js = jumpstart(y, hparams_algorithm["batch_size"])
-ap = asymptotic_performance(y, hparams_algorithm["batch_size"])
-tr = total_reward(y)
+js = jumpstart(y, hparams_algorithm["batch_size"]).item()
+ap = asymptotic_performance(y, hparams_algorithm["batch_size"]).item()
+tr = total_reward(y).item()
 
 print(f"Jumpstart: {js}")
 print(f"Asymptotic Performance: {ap}")

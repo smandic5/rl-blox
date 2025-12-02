@@ -45,7 +45,7 @@ class TrajectoryCollector:
             self.hidden_actor_shape = None
             self.hidden_critic_shape = None
 
-        self.invalid = jnp.zeros((num_envs, max_steps + 1), dtype=bool)
+        self.invalid = jnp.zeros((num_envs, max_steps), dtype=bool)
 
     def update(
         self,
@@ -75,7 +75,13 @@ class TrajectoryCollector:
             jnp.logical_or(terminated, truncated)
         )
 
-    def get_batch(self, next_values: jnp.ndarray) -> tuple[
+    def get_valid_mask(self) -> jnp.ndarray:
+        return ~self.invalid[:, : self.ptr].flatten()
+
+    def current_batch_size(self) -> int:
+        return jnp.sum(self.get_valid_mask())
+
+    def get_batch(self, next_values: jnp.ndarray, max_size=None) -> tuple[
         jnp.ndarray,
         jnp.ndarray,
         jnp.ndarray,
@@ -85,16 +91,19 @@ class TrajectoryCollector:
         jnp.ndarray,
         jnp.ndarray,
     ]:
-        self.values = self.values.at[:, -1].set(next_values.flatten())
-        valid = ~self.invalid[:, :-1].flatten()
+        if max_size == None:
+            max_size = self.current_batch_size()
+
+        self.values = self.values.at[:, self.ptr].set(next_values.flatten())
+        valid = self.get_valid_mask()
 
         if self.save_hidden_states:
-            h_actor = self.hidden_actor.reshape(-1, *self.hidden_actor_shape)[
-                valid
-            ]
-            h_critic = self.hidden_critic.reshape(
+            h_actor = self.hidden_actor[:, : self.ptr].reshape(
+                -1, *self.hidden_actor_shape
+            )[valid][:max_size]
+            h_critic = self.hidden_critic[:, : self.ptr].reshape(
                 -1, *self.hidden_critic_shape
-            )[valid]
+            )[valid][:max_size]
         else:
             h_actor = None
             h_critic = None
@@ -112,12 +121,16 @@ class TrajectoryCollector:
                 "hidden_state_critic",
             ],
         )(
-            self.observations.reshape(-1, *self.obs_shape)[valid],
-            self.actions.reshape(-1, *self.action_shape)[valid],
-            self.rewards.flatten()[valid],
-            self.terminated.flatten()[valid],
-            self.values[:, :-1].flatten()[valid],
-            self.values[:, 1:].flatten()[valid],
+            self.observations[:, : self.ptr].reshape(-1, *self.obs_shape)[
+                valid
+            ][:max_size],
+            self.actions[:, : self.ptr].reshape(-1, *self.action_shape)[valid][
+                :max_size
+            ],
+            self.rewards[:, : self.ptr].flatten()[valid][:max_size],
+            self.terminated[:, : self.ptr].flatten()[valid][:max_size],
+            self.values[:, : self.ptr].flatten()[valid][:max_size],
+            self.values[:, 1 : self.ptr + 1].flatten()[valid][:max_size],
             h_actor,
             h_critic,
         )

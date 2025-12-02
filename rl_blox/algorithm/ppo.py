@@ -1,3 +1,4 @@
+import os
 from collections import namedtuple
 from functools import partial
 from typing import Any
@@ -6,6 +7,7 @@ import gymnasium as gym
 import jax
 import jax.numpy as jnp
 import numpy as np
+import psutil
 from flax import nnx
 from tqdm.rich import trange
 
@@ -24,6 +26,7 @@ def collect_trajectories(
     logger: LoggerBase | None = None,
     last_observation=None,
     global_step: int = 0,
+    reach_batch_size: bool = True,
 ) -> tuple[
     jnp.ndarray,
     jnp.ndarray,
@@ -78,7 +81,7 @@ def collect_trajectories(
 
     trajectory_collector = TrajectoryCollector(
         envs.num_envs,
-        batch_size,
+        batch_size * 2,
         envs.single_observation_space.shape,
         envs.single_action_space.shape,
         save_hidden_states=False,
@@ -86,7 +89,7 @@ def collect_trajectories(
     obs = envs.reset()[0] if last_observation is None else last_observation
 
     subkeys = jax.random.split(key, batch_size)
-    for i in range(batch_size):
+    for i in range(batch_size * 2):
         action = actor.sample(obs, subkeys[i])
         value = critic(obs)
         next_obs, reward, terminated, truncated, info = envs.step(
@@ -120,9 +123,17 @@ def collect_trajectories(
                     logger.start_new_episode()
 
         obs = next_obs
+        reached_size = (
+            trajectory_collector.current_batch_size()
+            >= batch_size * envs.num_envs
+        )
+        if reached_size or (not reach_batch_size and i >= batch_size):
+            break
 
     value = critic(obs)
-    batch = trajectory_collector.get_batch(value)
+    batch = trajectory_collector.get_batch(
+        value, batch_size * envs.num_envs if reach_batch_size else None
+    )
 
     return namedtuple(
         "PPO_Trajectory",

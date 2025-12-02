@@ -1,3 +1,4 @@
+import os
 from collections import namedtuple
 from typing import Any
 
@@ -6,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import psutil
 import tensorflow_probability.substrates.jax.distributions as dist
 from flax import nnx
 from tqdm.rich import trange
@@ -21,26 +23,20 @@ def inner_loop(
     envs: gym.vector.VectorEnv,
     actor: StochasticPolicyBase,
     critic: nnx.Module,
+    optimizer_actor: nnx.Optimizer,
+    optimizer_critic: nnx.Optimizer,
     key: jnp.ndarray,
     current_iteration: int,
     batch_size: int = 64,
     epochs: int = 1,
-    inner_actor_lr: float = 0.001,
-    inner_critic_lr: float = 0.001,
     logger: LoggerBase | None = None,
 ) -> tuple[float, float]:
     adapting_step = 0
     last_observation = envs.reset()[0]
     # adapt model
-    optimizer_actor = nnx.Optimizer(
-        actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
-    )
-    optimizer_critic = nnx.Optimizer(
-        critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
-    )
+    logger_adapting = logger if logger is None else MemoryLogger()
     for i in range(epochs):
         # collect trajectory
-        logger_adapting = logger if logger is None else MemoryLogger()
         key, subkey = jax.random.split(key)
         (
             observation,
@@ -59,6 +55,7 @@ def inner_loop(
             logger_adapting,
             last_observation,
             adapting_step,
+            reach_batch_size=True,
         )
 
         loss_val = update_ppo(
@@ -93,7 +90,13 @@ def inner_loop(
         _,
         _,
     ) = collect_trajectories(
-        envs, actor, critic, subkey, batch_size, logger_adapted
+        envs,
+        actor,
+        critic,
+        subkey,
+        batch_size,
+        logger_adapted,
+        reach_batch_size=True,
     )
     if logger is not None:
         total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
@@ -118,15 +121,10 @@ def inner_loop(
 loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2), has_aux=True)
 
 
-import os
-
-import psutil
-
-
 def print_memory_usage(i=None):
     process = psutil.Process(os.getpid())
     mem = process.memory_info().rss  # Resident Set Size in bytes
-    print(f"Iteration: {i}; Memory usage: {mem / (1024 ** 2):.2f} MB")
+    print(f"{i};{' '*(30 - len(i))} Memory usage: {mem / (1024 ** 2):.2f} MB")
 
 
 def train_maml_ppo(
@@ -152,9 +150,15 @@ def train_maml_ppo(
         env_set[i] = gym.wrappers.vector.RecordEpisodeStatistics(envs)
 
     is_weighted_ts = isinstance(task_selector, WeightedTaskSelector)
+    optimizer_actor_inner = nnx.Optimizer(
+        actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
+    )
+    optimizer_critic_inner = nnx.Optimizer(
+        critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
+    )
 
     for iteration in trange(iterations, disable=not progress_bar):
-        print_memory_usage(iteration)
+        print_memory_usage(f"Iteration: {iteration}")
         task_id = task_selector.select()
         envs = env_set[task_id]
         envs.reset()
@@ -171,12 +175,12 @@ def train_maml_ppo(
             envs,
             actor_clone,
             critic_clone,
+            optimizer_actor_inner,
+            optimizer_critic_inner,
             key,
             iteration,
             batch_size=batch_size,
             epochs=epochs,
-            inner_actor_lr=inner_actor_lr,
-            inner_critic_lr=inner_critic_lr,
             logger=logger,
         )
 
