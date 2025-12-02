@@ -7,6 +7,11 @@ from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
 from rl_blox.algorithm.meta.maml_ppo import train_maml_ppo
 from rl_blox.algorithm.ppo import train_ppo
+from rl_blox.blox.adaptation_metrics import (
+    asymptotic_performance,
+    jumpstart,
+    total_reward,
+)
 from rl_blox.blox.env_util import OneHotObservationWrapper
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
@@ -49,7 +54,6 @@ env_set_size = (
 )
 env_seeds = jax.random.randint(subkey, (env_set_size,), 1, 100)
 desc = generate_random_map(size=lake_size, seed=env_seeds[0].item())
-print(desc)
 env_set = [
     gym.make_vec(
         env_name,
@@ -91,15 +95,6 @@ optimizer_critic = nnx.Optimizer(
     critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
 )
 
-"""selector = HardTaskPrioritizationTaskSelector(
-    jnp.arange(hparams_algorithm["train_set_size"]),
-    max_reward=(1 / (lake_size - 1) ** 2)
-    * hparams_algorithm["batch_size"]
-    * hparams_algorithm["num_envs"]
-    * 0.6,
-    progress_weight=0.8,
-    key=key,
-)"""
 selector = UniformTaskSelector(
     jnp.arange(hparams_algorithm["train_set_size"]), key=key
 )
@@ -147,12 +142,6 @@ actor, critic, optimizer_actor, optimizer_critic = train_ppo(
     batch_size=hparams_algorithm["batch_size"],
 )
 
-from rl_blox.blox.adaptation_metrics import (
-    asymptotic_performance,
-    jumpstart,
-    total_reward,
-)
-
 x, y = memory_logger.get_stat("return")
 js = jumpstart(y, hparams_algorithm["batch_size"]).item()
 ap = asymptotic_performance(y, hparams_algorithm["batch_size"]).item()
@@ -169,7 +158,7 @@ tr = total_reward(y).item()
 
 print(f"Jumpstart: {js}")
 print(f"Asymptotic Performance: {ap}")
-print(f"Total Reward: {tr}")
+print(f"Total Successes: {tr}")
 
 # Evaluation
 
