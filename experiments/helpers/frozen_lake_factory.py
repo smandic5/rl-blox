@@ -34,7 +34,7 @@ def create_fl(
             desc=random_map_gen,
             is_slippery=step_success_rate < 1,
             success_rate=step_success_rate,
-            reward_schedule=(reward_goal, reward_frozen, reward_hole),
+            reward_schedule=(reward_goal, reward_hole, reward_frozen),
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
         )

@@ -74,8 +74,11 @@ def eval_task_selector(
         memory_logger = MemoryLogger()
         logger = adapt(alg_name, vec_env_set, actor, critic, i, memory_logger)
 
-        x, y = memory_logger.get_stat("return")
-        js, ap, tr = calculate_eval_metrics(x, y, alg_name, i, epoch)
+        for metric_name in ["return", "success"]:
+            x, y = memory_logger.get_stat(metric_name)
+            js, ap, tr = calculate_eval_metrics(
+                x, y, alg_name, i, epoch, metric_name
+            )
 
         del logger
 
@@ -123,12 +126,12 @@ def adapt(alg_name, vec_env_set, actor, critic, task_i, memory_logger):
     return logger
 
 
-def calculate_eval_metrics(x, y, name, task_i, epoch):
+def calculate_eval_metrics(x, y, name, task_i, epoch, metric_name):
     js = jumpstart(y, hparams_algorithm["batch_size"]).item()
     ap = asymptotic_performance(y, hparams_algorithm["batch_size"]).item()
     tr = total_reward(y).item()
 
-    print(f"{name} on task {task_i} from epoch {epoch}")
+    print(f"{name} on task {task_i} from epoch {epoch}: {metric_name}")
     print(f"Jumpstart: {js}")
     print(f"Asymptotic Performance: {ap}")
     print(f"Total Reward: {tr}")

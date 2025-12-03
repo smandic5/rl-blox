@@ -8,13 +8,14 @@ from rl_blox.blox.similarity_metrics.model_similarity.bisimulation import (
 )
 
 
-def get_ts_config(index: int, max_reward: float = 1.0):
+def get_ts_config(index: int, max_reward: float = 1.0, min_reward: float = 0.0):
     selector_configurations = [
         dict(
             selector_class=HardTaskPrioritizationTaskSelector,
             prefer_similar=None,
             choose_from_last_pick=None,
             max_reward=max_reward,
+            min_reward=min_reward,
             progress_weight=0.8,
         ),
         dict(
@@ -22,6 +23,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=None,
             choose_from_last_pick=None,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -29,6 +31,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=True,
             choose_from_last_pick=False,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -36,6 +39,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=True,
             choose_from_last_pick=True,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -43,6 +47,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=False,
             choose_from_last_pick=False,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -50,6 +55,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=False,
             choose_from_last_pick=True,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -57,6 +63,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=True,
             choose_from_last_pick=False,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -64,6 +71,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=True,
             choose_from_last_pick=True,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -71,6 +79,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=False,
             choose_from_last_pick=False,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
         dict(
@@ -78,6 +87,7 @@ def get_ts_config(index: int, max_reward: float = 1.0):
             prefer_similar=False,
             choose_from_last_pick=True,
             max_reward=None,
+            min_reward=None,
             progress_weight=None,
         ),
     ]

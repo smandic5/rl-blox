@@ -106,20 +106,24 @@ def collect_trajectories(
 
         if "episode" in info.keys():
             finished_reward_len_obs = [
-                (r, l)
-                for r, l, f in zip(
-                    info["episode"]["r"],
-                    info["episode"]["l"],
-                    info["_episode"],
-                    strict=True,
+                (index, r, l)
+                for index, (r, l, f) in enumerate(
+                    zip(
+                        info["episode"]["r"],
+                        info["episode"]["l"],
+                        info["_episode"],
+                        strict=True,
+                    )
                 )
                 if f
             ]
-            for i, (r, l) in enumerate(finished_reward_len_obs):
+            for i, (index, r, l) in enumerate(finished_reward_len_obs):
                 global_step += int(l)
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
-                    logger.record_stat("success", r == 1.0, step=global_step)
+                    logger.record_stat(
+                        "success", reward[index] == 0.0, step=global_step
+                    )
                     logger.start_new_episode()
 
         obs = next_obs
