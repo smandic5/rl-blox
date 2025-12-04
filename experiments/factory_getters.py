@@ -79,15 +79,27 @@ get_policies = partial(
 
 # ------------------- Task Selector
 
+steps_in_batch = hparams_algorithm["batch_size"] * hparams_algorithm["num_envs"]
+min_steps = (params_frozen_lake["lake_size"] - 1) ** 2
 max_reward = (
     (
-        1 / (params_frozen_lake["lake_size"] - 1) ** 2
-    )  # max potential reward per step (not realistic)
-    * hparams_algorithm["batch_size"]
-    * hparams_algorithm["num_envs"]  # max steps made
-    * 0.3  # mulitplier
+        params_frozen_lake["reward_goal"]
+        + (min_steps - 1) * params_frozen_lake["reward_frozen"]
+    )
+    / min_steps
+) * steps_in_batch  # max potential reward per step (not realistic)
+# min_reward = (
+#    (
+#        (params_frozen_lake["reward_hole"]
+#        + params_frozen_lake["reward_frozen"])
+#        / 2
+#    )  # min potential reward per step (not realistic) (one step then hole)
+#    * steps_in_batch
+# )
+min_reward = -1000  # (otherwise not realistic)
+get_task_selector_config = partial(
+    get_ts_config, max_reward=max_reward, min_reward=min_reward
 )
-get_task_selector_config = partial(get_ts_config, max_reward=max_reward)
 
 # ------------------- Logger
 

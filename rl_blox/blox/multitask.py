@@ -285,6 +285,7 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
         progress = (reward + self.min_reward) / (
             self.max_reward + self.min_reward
         )
+        progress = max(progress, 0)
         self.learning_speed = self.learning_speed.at[self.last_picked].set(
             -(progress - self.last_progress[self.last_picked])
         )
