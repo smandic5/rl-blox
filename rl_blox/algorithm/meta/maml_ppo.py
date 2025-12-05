@@ -77,6 +77,12 @@ def inner_loop(
             jnp.sum(reward).item() / total_episodes,
             step=current_iteration,
         )
+        _, success = logger_adapting.get_stat("success")
+        logger.record_stat(
+            "success_rate_while_adapting",
+            sum(success) / len(success),
+            step=current_iteration,
+        )
 
     # collect trajectory with adapted model
     logger_adapted = logger if logger is None else MemoryLogger()
@@ -105,6 +111,13 @@ def inner_loop(
             jnp.sum(reward).item() / total_episodes,
             step=current_iteration,
         )
+        _, success = logger_adapted.get_stat("success")
+        success_rate = sum(success) / len(success)
+        logger.record_stat(
+            "success_rate_after_adapting",
+            success_rate,
+            step=current_iteration,
+        )
 
     # calc loss
     advs, returns = compute_gae(
@@ -115,7 +128,7 @@ def inner_loop(
         actor, critic, logp, observation, action, advs, returns
     )
 
-    return adapted_loss_val, jnp.sum(reward).item()
+    return adapted_loss_val, (jnp.sum(reward).item(), success_rate)
 
 
 loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2), has_aux=True)
@@ -171,17 +184,19 @@ def train_maml_ppo(
         actor_clone = nnx.clone(actor)
         critic_clone = nnx.clone(critic)
 
-        (meta_loss, reward), (grad_actor, grad_critic) = loss_grad_fn(
-            envs,
-            actor_clone,
-            critic_clone,
-            optimizer_actor_inner,
-            optimizer_critic_inner,
-            key,
-            iteration,
-            batch_size=batch_size,
-            epochs=epochs,
-            logger=logger,
+        (meta_loss, (reward, success_rate)), (grad_actor, grad_critic) = (
+            loss_grad_fn(
+                envs,
+                actor_clone,
+                critic_clone,
+                optimizer_actor_inner,
+                optimizer_critic_inner,
+                key,
+                iteration,
+                batch_size=batch_size,
+                epochs=epochs,
+                logger=logger,
+            )
         )
 
         optimizer_actor.update(actor, grad_actor)
@@ -194,6 +209,9 @@ def train_maml_ppo(
                 f"env_{task_id}_meta_loss", meta_loss, step=iteration
             )
             logger.record_stat(f"env_{task_id}_reward", reward, step=iteration)
+            logger.record_stat(
+                f"env_{task_id}_success_rate", success_rate, step=iteration
+            )
             logger.record_epoch(f"{agent_name}_ACTOR", actor, step=iteration)
             logger.record_epoch(f"{agent_name}_CRITIC", critic, step=iteration)
 
