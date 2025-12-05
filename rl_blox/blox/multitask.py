@@ -217,10 +217,13 @@ class CostMatrixTaskSelector(WeightedTaskSelector):
         self.recalculate_weights()
 
     def recalculate_weights(self):
+        maxval = jnp.max(self.cost_matrix)
+        if maxval != 0:
+            self.cost_matrix = self.cost_matrix / jnp.max(self.cost_matrix)
         if self.choose_from_last_pick:
-            weights = self.cost_matrix[self.last_picked]
+            weights = -self.cost_matrix[self.last_picked]
         else:
-            weights = jnp.sum(self.cost_matrix, axis=-1)
+            weights = -jnp.sum(self.cost_matrix, axis=-1)
         if not self.prefer_similar:
             weights *= -1
         self.weights = jax.nn.softmax(weights)

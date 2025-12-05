@@ -105,7 +105,7 @@ def get_network_distance(model1, model2) -> float:
             for swap_index in jnp.argwhere(
                 sort_i - jnp.arange(sort_i.shape[0])
             ):
-                print(f"Swap {swap_index} with {sort_i[swap_index]}")
+                # print(f"Swap {swap_index} with {sort_i[swap_index]}")
                 _swap_perceptron(
                     model2_layers_cloned[i],
                     model2_layers_cloned[i + 1],
