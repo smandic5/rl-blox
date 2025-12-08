@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=meta_rl_task_scheduling
-#SBATCH --partition=qpu_ampere
+#SBATCH --partition=gpu_ampere
 #SBATCH --account=deepl
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=svma01@dfki.de
@@ -11,4 +11,4 @@
 #SBATCH --gres=gpu:0
 #SBATCH -D /mnt/beegfs/home/smandic/rl-blox/
 
-singularity exec /mnt/beegfs/public/images/metablox.sif python maml_ppo_example.py
+singularity exec --nv /mnt/beegfs/public/images/metablox.sif python maml_ppo_example.py

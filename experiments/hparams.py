@@ -28,7 +28,7 @@ hparams_algorithm = dict(
     batch_size=128,
     iterations=10002,
     set_size_train=5,
-    epochs=10,
+    epochs=15,
 )
 
 hparams_eval = dict(
