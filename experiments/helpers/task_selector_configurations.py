@@ -1,10 +1,8 @@
 from rl_blox.blox.multitask import (
     HardTaskPrioritizationTaskSelector,
+    ModelBasedTaskSelector,
     PolicySimilarityTaskSelector,
     UniformTaskSelector,
-)
-from rl_blox.blox.similarity_metrics.model_similarity.bisimulation import (
-    ModelBasedTaskSelector,
 )
 
 

@@ -8,6 +8,9 @@ from gymnasium.wrappers import TransformObservation
 from numpy.typing import ArrayLike
 
 from ..blox.mapb import DUCB
+from .similarity_metrics.model_similarity.bisimulation import (
+    BisimulationSimilarity,
+)
 from .similarity_metrics.policy_similarity import get_policy_distance_matrix
 
 
@@ -206,10 +209,15 @@ class CostMatrixTaskSelector(WeightedTaskSelector):
         tasks,
         prefer_similar: bool = True,
         choose_from_last_pick: bool = False,
+        cost_matrix: jnp.ndarray = None,
         **kwargs,
     ):
         num_tasks = len(tasks)
-        self.cost_matrix = jnp.ones((num_tasks, num_tasks)) / num_tasks
+        self.cost_matrix = (
+            jnp.ones((num_tasks, num_tasks)) / num_tasks
+            if cost_matrix is None
+            else cost_matrix
+        )
         super().__init__(tasks, weights=self.cost_matrix[0], **kwargs)
         self.prefer_similar = prefer_similar
         self.choose_from_last_pick = choose_from_last_pick
@@ -242,8 +250,6 @@ class PolicySimilarityTaskSelector(CostMatrixTaskSelector):
         self,
         tasks,
         policies: list,
-        prefer_similar: bool = True,
-        choose_from_last_pick: bool = False,
         **kwargs,
     ):
         self.policies = policies
@@ -256,6 +262,36 @@ class PolicySimilarityTaskSelector(CostMatrixTaskSelector):
     def feedback(self, reward: float, policy=None, **kwargs):
         self.policies[self.last_picked] = policy
         super().feedback(reward)
+
+
+class ModelBasedTaskSelector(CostMatrixTaskSelector):
+    def __init__(
+        self,
+        tasks,
+        envs: list = [],
+        **kwargs,
+    ):
+        bisimulation = BisimulationSimilarity()
+        super().__init__(
+            tasks, cost_matrix=bisimulation.compute_matrix(envs), **kwargs
+        )
+
+    def recalculate_weights(self):
+        if self.choose_from_last_pick:
+            policy_costs = self.cost_matrix[self.last_picked]
+        else:
+            policy_costs = jnp.sum(self.cost_matrix, axis=-1)
+        if not self.prefer_similar:
+            policy_costs *= -1
+        self.weights = jax.nn.softmax(policy_costs)
+
+    def select(self):
+        self.last_picked = super().select()
+        return self.last_picked
+
+    def feedback(self, reward: float, **kwargs):
+        super().feedback(reward)
+        self.recalculate_weights()
 
 
 class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
@@ -280,8 +316,6 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
 
     def select(self):
         self.last_picked = super().select()
-        # print("------------------------------------------")
-        # print(f"selected: {self.last_picked}")
         return self.last_picked
 
     def feedback(self, reward, **kwargs):
@@ -301,9 +335,4 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
         self.weights = p_progress * self.progress_weight + p_speed * (
             1 - self.progress_weight
         )
-
-        # print(f"Score: {reward} / {self.max_reward} = {progress}")
-        # print(f"progress: {p_progress.tolist()}")
-        # print(f"speed: {p_speed.tolist()}")
-        # print(f"weights: {self.weights.tolist()}")
         return super().feedback(reward, **kwargs)

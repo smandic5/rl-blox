@@ -92,8 +92,8 @@ def adapt(alg_name, vec_env_set, actor, critic, task_i, memory_logger):
         ]
     )
     logger.define_experiment(
-        env_name=params_env["env_name"],
-        algorithm_name=alg_name + f"_eval_{task_i}",
+        env_name=f"EVAL_{params_env['env_name']}",
+        algorithm_name=alg_name + f"_{task_i}",
         hparams=hparams_model | hparams_algorithm | hparams_eval | params_env,
     )
 

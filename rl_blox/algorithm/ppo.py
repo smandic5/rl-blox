@@ -14,7 +14,7 @@ from tqdm.rich import trange
 from ..blox.function_approximator.policy_head import StochasticPolicyBase
 from ..blox.gae import compute_gae
 from ..blox.vec_env_util import TrajectoryCollector
-from ..logging.logger import LoggerBase
+from ..logging.logger import LoggerBase, LoggerList, MemoryLogger
 
 
 def collect_trajectories(
@@ -331,7 +331,11 @@ def train_ppo(
         logger.start_new_episode()
 
     global_step = 0
+    list_logger = None
     for iteration in trange(iterations, disable=not progress_bar):
+        if logger != None:
+            mem_logger = MemoryLogger()
+            list_logger = LoggerList([mem_logger, logger])
         key, subkey = jax.random.split(key)
         (
             observation,
@@ -347,7 +351,7 @@ def train_ppo(
             critic,
             subkey,
             batch_size,
-            logger,
+            list_logger,
             last_observation,
             global_step,
         )
@@ -367,5 +371,10 @@ def train_ppo(
 
         if logger is not None:
             logger.record_stat("loss", loss_val, step=iteration)
+            for metric_name in ["return", "success"]:
+                x, y = mem_logger.get_stat(metric_name)
+                logger.record_stat(
+                    f"average_{metric_name}", jnp.average(y), step=iteration
+                )
 
     return actor, critic, optimizer_actor, optimizer_critic

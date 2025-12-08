@@ -56,4 +56,6 @@ def experiments_train(task_selector_index: int):
 
 if __name__ == "__main__":
     index = int(sys.argv[1])
+    if len(sys.argv) >= 3:
+        index += int(sys.argv[2])
     experiments_train(index)
