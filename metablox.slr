@@ -11,7 +11,7 @@
 #SBATCH --gres=gpu:0
 #SBATCH -D /mnt/beegfs/home/smandic/rl-blox/
 
-#SBATCH --array=0-5
+#SBATCH --array=0-9
 
 singularity exec --home /mnt/beegfs/home/smandic/rl-blox/ --nv /mnt/beegfs/public/images/metablox.sif \
     python similarity_trainer.py $SLURM_ARRAY_TASK_ID
