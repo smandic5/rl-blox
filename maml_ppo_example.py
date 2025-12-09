@@ -15,10 +15,7 @@ from rl_blox.blox.adaptation_metrics import (
 from rl_blox.blox.env_util import OneHotObservationWrapper
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
-from rl_blox.blox.multitask import (
-    HardTaskPrioritizationTaskSelector,
-    UniformTaskSelector,
-)
+from rl_blox.blox.multitask import UniformTaskSelector
 from rl_blox.blox.vec_env_util import OneHotVecObservationWrapper
 from rl_blox.logging.logger import AIMLogger, MemoryLogger
 

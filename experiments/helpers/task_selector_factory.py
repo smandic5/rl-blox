@@ -13,8 +13,6 @@ def create_task_selector(
     key: jnp.ndarray,
     envs: list = [],
     policies: list = [],
-    max_reward: float = 1.0,
-    min_reward: float = 0.0,
     prefer_similar: bool = True,
     choose_from_last_pick: bool = False,
 ) -> TaskSelector:
@@ -25,8 +23,6 @@ def create_task_selector(
         policies=policies,
         prefer_similar=prefer_similar,
         choose_from_last_pick=choose_from_last_pick,
-        max_reward=max_reward,
-        min_reward=min_reward,
     )
     return selector
 
@@ -46,8 +42,6 @@ def get_task_selector(
         [nnx.clone(actor) for _ in range(hparams_algorithm["set_size_train"])],
         prefer_similar=hparams_task_selector["prefer_similar"],
         choose_from_last_pick=hparams_task_selector["choose_from_last_pick"],
-        max_reward=hparams_task_selector["max_reward"],
-        min_reward=hparams_task_selector["min_reward"],
     )
 
     return task_selector

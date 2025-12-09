@@ -122,7 +122,7 @@ def collect_trajectories(
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
                     logger.record_stat(
-                        "success", reward[index] == 0.0, step=global_step
+                        "success", reward[index] == 1.0, step=global_step
                     )
                     logger.start_new_episode()
 
@@ -282,6 +282,7 @@ def train_ppo(
     epochs: int = 1,
     batch_size: int = 64,
     seed: int = 1,
+    key: jnp.ndarray = None,
     logger: LoggerBase | None = None,
     progress_bar: bool = True,
 ) -> tuple[StochasticPolicyBase, nnx.Module, nnx.Optimizer, nnx.Optimizer]:
@@ -324,9 +325,11 @@ def train_ppo(
     optimizer_critic : nnx.Optimizer
         Updated critic optimizer.
     """
-    key = jax.random.key(seed)
-    last_observation, _ = envs.reset(seed=seed)
-    envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
+    if key == None:
+        key = jax.random.key(seed)
+        envs = gym.wrappers.vector.RecordEpisodeStatistics(envs)
+
+    last_observation, _ = envs.reset(seed=seed) if key == None else envs.reset()
     if logger is not None:
         logger.start_new_episode()
 

@@ -16,7 +16,7 @@ from ...blox.function_approximator.policy_head import StochasticPolicyBase
 from ...blox.gae import compute_gae
 from ...blox.multitask import TaskSelector, WeightedTaskSelector
 from ...logging.logger import LoggerBase, MemoryLogger
-from ..ppo import collect_trajectories, ppo_loss, update_ppo
+from ..ppo import collect_trajectories, ppo_loss, train_ppo, update_ppo
 
 
 def inner_loop(
@@ -31,58 +31,29 @@ def inner_loop(
     epochs: int = 1,
     logger: LoggerBase | None = None,
 ) -> tuple[float, float]:
-    adapting_step = 0
-    last_observation = envs.reset()[0]
     # adapt model
     logger_adapting = logger if logger is None else MemoryLogger()
-    for i in range(epochs):
-        # collect trajectory
-        key, subkey = jax.random.split(key)
-        (
-            observation,
-            action,
-            reward,
-            terminated,
-            next_value,
-            last_observation,
-            adapting_step,
-        ) = collect_trajectories(
-            envs,
-            actor,
-            critic,
-            subkey,
-            batch_size,
-            logger_adapting,
-            last_observation,
-            adapting_step,
-            reach_batch_size=True,
-        )
-
-        loss_val = update_ppo(
-            actor,
-            critic,
-            optimizer_actor,
-            optimizer_critic,
-            observation,
-            action,
-            reward,
-            terminated,
-            next_value,
-            1,
-        )
+    key, subkey = jax.random.split(key)
+    actor, critic, optimizer_actor, optimizer_critic = train_ppo(
+        envs,
+        actor,
+        critic,
+        optimizer_actor,
+        optimizer_critic,
+        epochs,
+        batch_size=batch_size,
+        key=subkey,
+        logger=logger_adapting,
+        progress_bar=False,
+    )
     if logger is not None:
-        total_episodes = len(logger_adapting.get_stat("return")[0]) + batch_size
-        logger.record_stat(
-            "reward_while_adapting",
-            jnp.sum(reward).item() / total_episodes,
-            step=current_iteration,
-        )
-        _, success = logger_adapting.get_stat("success")
-        logger.record_stat(
-            "success_rate_while_adapting",
-            sum(success) / len(success),
-            step=current_iteration,
-        )
+        for metric_name in ["average_return", "average_success"]:
+            x, y = logger_adapting.get_stat(metric_name)
+            logger.record_stat(
+                f"{metric_name}_while_adapting",
+                jnp.average(y),
+                step=current_iteration,
+            )
 
     # collect trajectory with adapted model
     logger_adapted = logger if logger is None else MemoryLogger()
@@ -107,14 +78,14 @@ def inner_loop(
     if logger is not None:
         total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
         logger.record_stat(
-            "reward_after_adapting",
+            "average_return_after_adapting",
             jnp.sum(reward).item() / total_episodes,
             step=current_iteration,
         )
         _, success = logger_adapted.get_stat("success")
         success_rate = sum(success) / len(success)
         logger.record_stat(
-            "success_rate_after_adapting",
+            "average_success_after_adapting",
             success_rate,
             step=current_iteration,
         )
@@ -128,7 +99,7 @@ def inner_loop(
         actor, critic, logp, observation, action, advs, returns
     )
 
-    return adapted_loss_val, (jnp.sum(reward).item(), success_rate)
+    return adapted_loss_val, (jnp.average(reward).item(), success_rate)
 
 
 loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2), has_aux=True)
@@ -202,7 +173,7 @@ def train_maml_ppo(
         optimizer_actor.update(actor, grad_actor)
         optimizer_critic.update(critic, grad_critic)
 
-        task_selector.feedback(reward=reward, policy=actor_clone)
+        task_selector.feedback(reward=success_rate, policy=actor_clone)
         if logger is not None:
             logger.record_stat("meta_loss", meta_loss, step=iteration)
             logger.record_stat(

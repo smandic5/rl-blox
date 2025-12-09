@@ -298,8 +298,6 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
     def __init__(
         self,
         tasks,
-        max_reward: float = 1,
-        min_reward: float = 1,
         progress_weight: float = 0.7,
         **kwargs,
     ):
@@ -309,8 +307,6 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
         )
         self.last_progress = jnp.zeros(num_tasks)
         self.learning_speed = jnp.zeros(num_tasks)
-        self.max_reward = max_reward + 1e-8
-        self.min_reward = abs(min_reward) + 1e-8
         self.progress_weight = progress_weight
         self.last_picked = 0
 
@@ -319,10 +315,7 @@ class HardTaskPrioritizationTaskSelector(WeightedTaskSelector):
         return self.last_picked
 
     def feedback(self, reward, **kwargs):
-        progress = (reward + self.min_reward) / (
-            self.max_reward + self.min_reward
-        )
-        progress = max(progress, 0)
+        progress = reward
         self.learning_speed = self.learning_speed.at[self.last_picked].set(
             -(progress - self.last_progress[self.last_picked])
         )
