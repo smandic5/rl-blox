@@ -137,14 +137,27 @@ class TrajectoryCollector:
 
 
 class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
-    def __init__(self, env: gym.vector.VectorEnv):
+    def __init__(self, env: gym.vector.VectorEnv, desc):
         if not isinstance(env.single_observation_space, gym.spaces.Discrete):
             raise TypeError(
                 f"Expected Discrete observation space, got {type(env.single_observation_space)}"
             )
         super().__init__(env)
 
-        self.obs_states = env.single_observation_space.n
+        self.OFFSETS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        self.n_states = env.single_observation_space.n
+        self.obs_states = env.single_observation_space.n + len(self.OFFSETS) * 4
+        self.desc = np.asarray([list(s) for s in desc])
+        self.l = len(self.desc)
+
+        self.HOLE, self.GOAL, self.FROZEN, self.OOB = range(4)
+        self.CODE_MAP = {
+            "S": self.FROZEN,
+            "F": self.FROZEN,
+            "H": self.HOLE,
+            "G": self.GOAL,
+            "O": self.OOB,
+        }
 
         # New observation space becomes a one-hot vector
         self.single_observation_space = gym.spaces.Box(
@@ -158,12 +171,31 @@ class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
         )
 
     def _one_hot(self, obs):
-        one_hot = np.zeros((obs.shape[0], self.obs_states), dtype=np.float32)
+        one_hot = np.zeros((obs.shape[0], self.n_states), dtype=np.float32)
         one_hot[np.arange(obs.shape[0]), obs] = 1.0
         return one_hot
 
+    def get_code(self, x, y):
+        oob = (x < 0) | (y < 0) | (x >= self.l) | (y >= self.l)
+        tiles = np.full(x.shape, "O", dtype="<U1")
+        tiles[~oob] = self.desc[y[~oob], x[~oob]]
+        indices = np.vectorize(self.CODE_MAP.get)(tiles)
+        return np.eye(4)[indices]
+
+    def get_surrounding(self, state):
+        x = state % self.l
+        y = state // self.l
+
+        return np.concatenate(
+            [self.get_code(x + dx, y + dy) for dx, dy in self.OFFSETS],
+            axis=-1,
+        )
+
     def observations(self, observations):
-        return self._one_hot(observations)
+        return np.concatenate(
+            [self._one_hot(observations), self.get_surrounding(observations)],
+            axis=-1,
+        )
 
 
 class AppendHistoryVecEnvWrapper(gym.vector.VectorWrapper):

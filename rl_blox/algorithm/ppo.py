@@ -373,7 +373,7 @@ def train_ppo(
         )
 
         if logger is not None:
-            logger.record_stat("loss", loss_val, step=iteration)
+            logger.record_stat("loss", loss_val.item(), step=iteration)
             for metric_name in ["return", "success"]:
                 x, y = mem_logger.get_stat(metric_name)
                 logger.record_stat(

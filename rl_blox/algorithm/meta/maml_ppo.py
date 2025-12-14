@@ -47,11 +47,12 @@ def inner_loop(
         progress_bar=False,
     )
     if logger is not None:
-        for metric_name in ["average_return", "average_success"]:
+        for metric_name in ["average_return", "average_success", "loss"]:
             x, y = logger_adapting.get_stat(metric_name)
+            value = y[-1] if metric_name == "loss" else jnp.average(y)
             logger.record_stat(
                 f"{metric_name}_while_adapting",
-                jnp.average(y),
+                value,
                 step=current_iteration,
             )
 

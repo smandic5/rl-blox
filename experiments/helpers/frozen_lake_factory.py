@@ -44,7 +44,7 @@ def create_fl(
             desc=random_map_gen,
         )
     for wrapper in wrappers:
-        envs = wrapper(envs)
+        envs = wrapper(envs, desc=random_map_gen)
     return envs
 
 
