@@ -7,7 +7,7 @@ class OneHotObservationWrapper(gym.ObservationWrapper):
     Wraps a discrete observation space to return one-hot encoded observations.
     """
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env: gym.Env, desc):
         super().__init__(env)
 
         if not isinstance(env.observation_space, gym.spaces.Discrete):
@@ -15,8 +15,38 @@ class OneHotObservationWrapper(gym.ObservationWrapper):
                 f"Expected Discrete observation space, got {type(env.observation_space)}"
             )
 
+        self.OFFSETS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        self.FIELD_TYPES = 4
+        self.n_states = env.observation_space.n
+        self.obs_states = self.n_states + len(self.OFFSETS) * self.FIELD_TYPES
+        self.desc = np.asarray([list(s) for s in desc])
+        self.l = len(self.desc)
+
+        self.HOLE, self.GOAL, self.FROZEN, self.OOB = range(self.FIELD_TYPES)
+        self.CODE_MAP = {
+            "S": self.FROZEN,
+            "F": self.FROZEN,
+            "H": self.HOLE,
+            "G": self.GOAL,
+            "O": self.OOB,
+        }
+
         self.observation_space = gym.spaces.Box(
-            low=0, high=1, shape=(env.observation_space.n,), dtype=np.float32
+            low=0, high=1, shape=(self.obs_states,), dtype=np.float32
+        )
+
+    def _get_code(self, x, y):
+        oob = (x < 0) | (y < 0) | (x >= self.l) | (y >= self.l)
+        tile = "O" if oob else self.desc[y, x]
+        return np.eye(self.FIELD_TYPES)[self.CODE_MAP[tile]]
+
+    def _get_surrounding(self, state):
+        x = state % self.l
+        y = state // self.l
+
+        return np.concatenate(
+            [self._get_code(x + dx, y + dy) for dx, dy in self.OFFSETS],
+            axis=-1,
         )
 
     def observation(self, obs):

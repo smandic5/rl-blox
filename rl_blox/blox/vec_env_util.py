@@ -145,12 +145,13 @@ class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
         super().__init__(env)
 
         self.OFFSETS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        self.FIELD_TYPES = 4
         self.n_states = env.single_observation_space.n
-        self.obs_states = env.single_observation_space.n + len(self.OFFSETS) * 4
+        self.obs_states = self.n_states + len(self.OFFSETS) * self.FIELD_TYPES
         self.desc = np.asarray([list(s) for s in desc])
         self.l = len(self.desc)
 
-        self.HOLE, self.GOAL, self.FROZEN, self.OOB = range(4)
+        self.HOLE, self.GOAL, self.FROZEN, self.OOB = range(self.FIELD_TYPES)
         self.CODE_MAP = {
             "S": self.FROZEN,
             "F": self.FROZEN,
