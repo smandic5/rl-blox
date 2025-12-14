@@ -176,25 +176,25 @@ class OneHotVecObservationWrapper(gym.vector.VectorObservationWrapper):
         one_hot[np.arange(obs.shape[0]), obs] = 1.0
         return one_hot
 
-    def get_code(self, x, y):
+    def _get_code(self, x, y):
         oob = (x < 0) | (y < 0) | (x >= self.l) | (y >= self.l)
         tiles = np.full(x.shape, "O", dtype="<U1")
         tiles[~oob] = self.desc[y[~oob], x[~oob]]
         indices = np.vectorize(self.CODE_MAP.get)(tiles)
         return np.eye(4)[indices]
 
-    def get_surrounding(self, state):
+    def _get_surrounding(self, state):
         x = state % self.l
         y = state // self.l
 
         return np.concatenate(
-            [self.get_code(x + dx, y + dy) for dx, dy in self.OFFSETS],
+            [self._get_code(x + dx, y + dy) for dx, dy in self.OFFSETS],
             axis=-1,
         )
 
     def observations(self, observations):
         return np.concatenate(
-            [self._one_hot(observations), self.get_surrounding(observations)],
+            [self._one_hot(observations), self._get_surrounding(observations)],
             axis=-1,
         )
 
