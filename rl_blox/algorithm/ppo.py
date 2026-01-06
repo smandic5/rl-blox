@@ -122,7 +122,7 @@ def collect_trajectories(
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
                     logger.record_stat(
-                        "success", reward[index] == 1.0, step=global_step
+                        "success", not terminated[index], step=global_step
                     )
                     logger.start_new_episode()
 

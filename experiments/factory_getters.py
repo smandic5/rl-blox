@@ -10,7 +10,9 @@ from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
+from .helpers.cart_pole_factory import create_vectorized_cp_from_hparams
 from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
+from .helpers.mountain_car_factory import create_vectorized_mc_from_hparams
 from .helpers.policy_factory import create_policies
 from .helpers.task_selector_configurations import get_ts_config
 from .helpers.task_selector_factory import get_task_selector
@@ -22,8 +24,10 @@ from .hparams import (
     hparams_algorithm,
     hparams_eval,
     hparams_model,
+    params_cartpole,
     params_env,
     params_frozen_lake,
+    params_mountain_car,
     save_frequency,
 )
 
@@ -42,9 +46,43 @@ create_fl_env = partial(
     hparams_env=params_frozen_lake,
     is_vec=False,
 )
-
-create_vec_env = create_vec_fl_env
-create_env = create_fl_env
+create_vec_mc_env = partial(
+    create_vectorized_mc_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_mountain_car,
+)
+create_mc_env = partial(
+    create_vectorized_mc_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_mountain_car,
+    is_vec=False,
+)
+create_vec_cp_env = partial(
+    create_vectorized_cp_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_cartpole,
+)
+create_cp_env = partial(
+    create_vectorized_cp_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_cartpole,
+    is_vec=False,
+)
+if params_env == params_frozen_lake:
+    create_vec_env = create_vec_fl_env
+    create_env = create_fl_env
+elif params_env == params_mountain_car:
+    create_vec_env = create_vec_mc_env
+    create_env = create_mc_env
+elif params_env == params_cartpole:
+    create_vec_env = create_vec_cp_env
+    create_env = create_cp_env
+else:
+    raise Exception("Unreognized env params")
 
 
 def get_num_features_actions(envs: gym.vector.VectorEnv) -> tuple[int, int]:
@@ -79,26 +117,8 @@ get_policies = partial(
 
 # ------------------- Task Selector
 
-steps_in_batch = hparams_algorithm["batch_size"] * hparams_algorithm["num_envs"]
-min_steps = (params_frozen_lake["lake_size"] - 1) ** 2
-max_reward = (
-    (
-        params_frozen_lake["reward_goal"]
-        + (min_steps - 1) * params_frozen_lake["reward_frozen"]
-    )
-    / min_steps
-) * steps_in_batch  # max potential reward per step (not realistic)
-# min_reward = (
-#    (
-#        (params_frozen_lake["reward_hole"]
-#        + params_frozen_lake["reward_frozen"])
-#        / 2
-#    )  # min potential reward per step (not realistic) (one step then hole)
-#    * steps_in_batch
-# )
-min_reward = -1000  # (otherwise not realistic)
 get_task_selector_config = partial(
-    get_ts_config, max_reward=max_reward, min_reward=min_reward
+    get_ts_config, max_reward=None, min_reward=None
 )
 
 # ------------------- Logger
