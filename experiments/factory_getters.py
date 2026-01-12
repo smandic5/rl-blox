@@ -12,7 +12,9 @@ from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 from .helpers.cart_pole_factory import create_vectorized_cp_from_hparams
 from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
+from .helpers.inverted_pendulum_factory import create_vectorized_ip_from_hparams
 from .helpers.mountain_car_factory import create_vectorized_mc_from_hparams
+from .helpers.pendulum_factory import create_vectorized_pd_from_hparams
 from .helpers.policy_factory import create_policies
 from .helpers.task_selector_configurations import get_ts_config
 from .helpers.task_selector_factory import get_task_selector
@@ -27,7 +29,9 @@ from .hparams import (
     params_cartpole,
     params_env,
     params_frozen_lake,
+    params_inverted_pendulum,
     params_mountain_car,
+    params_pendulum,
     save_frequency,
 )
 
@@ -72,24 +76,59 @@ create_cp_env = partial(
     hparams_env=params_cartpole,
     is_vec=False,
 )
+create_vec_pd_env = partial(
+    create_vectorized_pd_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_pendulum,
+)
+create_pd_env = partial(
+    create_vectorized_pd_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_pendulum,
+    is_vec=False,
+)
+create_vec_ip_env = partial(
+    create_vectorized_ip_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_inverted_pendulum,
+)
+create_ip_env = partial(
+    create_vectorized_ip_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_inverted_pendulum,
+    is_vec=False,
+)
 if params_env == params_frozen_lake:
     create_vec_env = create_vec_fl_env
     create_env = create_fl_env
 elif params_env == params_mountain_car:
     create_vec_env = create_vec_mc_env
     create_env = create_mc_env
+elif params_env == params_inverted_pendulum:
+    create_vec_env = create_vec_ip_env
+    create_env = create_ip_env
 elif params_env == params_cartpole:
     create_vec_env = create_vec_cp_env
     create_env = create_cp_env
+elif params_env == params_pendulum:
+    create_vec_env = create_vec_pd_env
+    create_env = create_pd_env
 else:
     raise Exception("Unreognized env params")
 
 
 def get_num_features_actions(envs: gym.vector.VectorEnv) -> tuple[int, int]:
-    assert type(envs.single_action_space) == gym.spaces.Discrete
-    actions = int(envs.single_action_space.n)
-    features = int(envs.single_observation_space.shape[0])
-    return features, actions
+    if type(envs.single_action_space) == gym.spaces.Discrete:
+        actions = int(envs.single_action_space.n)
+        features = int(envs.single_observation_space.shape[0])
+        return features, actions
+    else:
+        features = int(envs.single_observation_space.shape[0])
+        return features, 1
 
 
 # ------------------- Algorithm
@@ -154,7 +193,10 @@ def prepare_training(hparams_task_selector, name, seed):
 
     prep_key, subkey = jax.random.split(prep_key)
     actor, critic, optimizer_actor, optimizer_critic = get_policies(
-        features=features, actions=actions, key=subkey
+        features=features,
+        actions=actions,
+        key=subkey,
+        action_space=env_set[0].action_space,
     )
 
     prep_key, subkey = jax.random.split(prep_key)

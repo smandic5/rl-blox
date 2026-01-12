@@ -12,7 +12,11 @@ from experiments.checkpoint_loader import (
     load_models,
     parse_checkpoint_str,
 )
-from experiments.factory_getters import create_vec_env, get_num_features_actions
+from experiments.factory_getters import (
+    create_env,
+    create_vec_env,
+    get_num_features_actions,
+)
 from experiments.hparams import (
     hparams_algorithm,
     hparams_eval,
@@ -44,6 +48,18 @@ def experiments_eval():
         if not parsed_return[4]:  # skip critic
             continue
         eval_task_selector(s, *parsed_return)
+    eval_task_selector(
+        "deafult",
+        parsed_return[0],
+        parsed_return[1],
+        "None",
+        0,
+        True,
+        0,
+        0,
+        parsed_return[7],
+        skip_load=True,
+    )
 
 
 def eval_task_selector(
@@ -56,6 +72,7 @@ def eval_task_selector(
     step: int,
     epoch: int,
     alg_name: str,
+    skip_load: bool = False,
 ):
     # init key
     prep_key = jax.random.key(seed + hparams_eval["seed_change_by"])
@@ -67,7 +84,15 @@ def eval_task_selector(
 
     # init models
     prep_key, subkey = jax.random.split(prep_key)
-    actor, critic = load_models(prep_key, features, actions, dir_name)
+    env_set = create_env(key=subkey, ignore_wrappers=True)
+    actor, critic = load_models(
+        prep_key,
+        features,
+        actions,
+        dir_name,
+        env_set[0].action_space,
+        skip_load,
+    )
 
     for i in range(hparams_eval["set_size_test"]):
 

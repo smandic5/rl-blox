@@ -4,7 +4,10 @@ import optax
 from flax import nnx
 
 from rl_blox.blox.function_approximator.mlp import MLP
-from rl_blox.blox.function_approximator.policy_head import SoftmaxPolicy
+from rl_blox.blox.function_approximator.policy_head import (
+    GaussianTanhPolicy,
+    SoftmaxPolicy,
+)
 from rl_blox.blox.function_approximator.recurrent_policy_head import (
     RecurrentSoftmaxPolicy,
 )
@@ -17,6 +20,7 @@ def create_policies(
     actions: int,
     hparams_model: dict,
     key: jnp.ndarray,
+    action_space=None,
 ) -> tuple[
     RecurrentSoftmaxPolicy | SoftmaxPolicy,
     StackedGRU | MLP,
@@ -26,12 +30,14 @@ def create_policies(
     key_actor, key_critic = jax.random.split(key)
     actor = (StackedGRU if is_recurrent else MLP)(
         features,
+        # 2,
         actions,
         hparams_model["actor_hidden_layers"],
         hparams_model["actor_activation"],
         nnx.Rngs(key_actor),
     )
     actor = (RecurrentSoftmaxPolicy if is_recurrent else SoftmaxPolicy)(actor)
+    # actor = (RecurrentSoftmaxPolicy if is_recurrent else GaussianTanhPolicy)(actor, action_space=action_space)
 
     critic = (StackedGRU if is_recurrent else MLP)(
         features,

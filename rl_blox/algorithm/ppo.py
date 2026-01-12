@@ -91,10 +91,11 @@ def collect_trajectories(
     subkeys = jax.random.split(key, batch_size)
     for i in range(batch_size * 2):
         action = actor.sample(obs, subkeys[i])
+        # action = np.asarray([i.item() for i in action]).reshape(-1,1)
+        action = np.asarray(action)
+        # print(action)
         value = critic(obs)
-        next_obs, reward, terminated, truncated, info = envs.step(
-            np.asarray(action)
-        )
+        next_obs, reward, terminated, truncated, info = envs.step(action)
         trajectory_collector.update(
             obs,
             action,
@@ -121,9 +122,7 @@ def collect_trajectories(
                 global_step += int(l)
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
-                    logger.record_stat(
-                        "success", not terminated[index], step=global_step
-                    )
+                    logger.record_stat("success", r > 100, step=global_step)
                     logger.start_new_episode()
 
         obs = next_obs

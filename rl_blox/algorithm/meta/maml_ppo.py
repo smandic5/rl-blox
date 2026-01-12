@@ -77,14 +77,22 @@ def inner_loop(
         reach_batch_size=True,
     )
     if logger is not None:
-        total_episodes = len(logger_adapted.get_stat("return")[0]) + batch_size
+        try:
+            total_episodes = (
+                len(logger_adapted.get_stat("return")[0]) + batch_size
+            )
+        except:
+            total_episodes = batch_size
         logger.record_stat(
             "average_return_after_adapting",
             jnp.sum(reward).item() / total_episodes,
             step=current_iteration,
         )
-        _, success = logger_adapted.get_stat("success")
-        success_rate = sum(success) / len(success)
+        try:
+            _, success = logger_adapted.get_stat("success")
+            success_rate = sum(success) / len(success)
+        except:
+            success_rate = 1
         logger.record_stat(
             "average_success_after_adapting",
             success_rate,
