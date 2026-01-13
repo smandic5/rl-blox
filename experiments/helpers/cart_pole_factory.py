@@ -26,12 +26,15 @@ def create_cartpole(
             env_name,
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
+            max_episode_steps=100,
         )
+        envs.unwrapped.set_attr("gravity", gravity)
     else:
         envs = gym.make(
             env_name,
+            max_episode_steps=100,
         )
-    envs.gravity = gravity
+        envs.unwrapped.gravity = gravity
     for wrapper in wrappers:
         envs = wrapper(envs)
     envs.reset(seed=seed)

@@ -31,17 +31,17 @@ params_pendulum = dict(
 params_env = params_cartpole
 
 hparams_model = dict(
-    actor_hidden_layers=[64, 64],
+    actor_hidden_layers=[256, 256],
     actor_activation="relu",
     actor_learning_rate=3e-4,
-    critic_hidden_layers=[64, 64],
+    critic_hidden_layers=[256, 256],
     critic_activation="relu",
     critic_learning_rate=1e-3,
 )
 
 hparams_algorithm = dict(
-    num_envs=8,
-    batch_size=512,
+    num_envs=32,
+    batch_size=128,
     iterations=1000,
     set_size_train=10,
     epochs=1,

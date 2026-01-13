@@ -52,12 +52,18 @@ def load_weights(model: nnx.Module, name: str):
 
 
 def load_models(
-    key: jnp.ndarray, features: int, actions: int, folder_name: str
+    key: jnp.ndarray,
+    features: int,
+    actions: int,
+    folder_name: str,
+    action_space,
+    skip_load: bool,
 ):
     actor, critic, _, _ = get_policies(
-        features=features, actions=actions, key=key
+        features=features, actions=actions, key=key, action_space=action_space
     )
-    load_weights(actor, folder_name)
-    load_weights(critic, folder_name.replace("ACTOR", "CRITIC"))
+    if not skip_load:
+        load_weights(actor, folder_name)
+        load_weights(critic, folder_name.replace("ACTOR", "CRITIC"))
 
     return actor, critic
