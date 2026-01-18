@@ -3,6 +3,8 @@ from typing import Type
 import gymnasium as gym
 import jax
 import jax.numpy as jnp
+import numpy as np
+from gymnasium.envs.classic_control.mountain_car import MountainCarEnv
 
 from rl_blox.blox.env_util import AppendHistoryWrapper
 from rl_blox.blox.vec_env_util import AppendHistoryVecEnvWrapper
@@ -19,17 +21,22 @@ def create_mountain_car(
     wrappers: list[Type[gym.vector.VectorWrapper | gym.Wrapper]] = [],
     is_vec: bool = True,
     vectorization_mode: str = "sync",
-    goal_velocity: float = 0.1,
+    goal_velocity: float = 9.8,
 ):
+    gravity = goal_velocity / 400
     if is_vec:
         envs = gym.make_vec(
             env_name,
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
-            goal_velocity=goal_velocity,
+            max_episode_steps=100,
         )
+        envs = VecHeightRewardWrapper(envs)
+        envs.unwrapped.set_attr("gravity", gravity)
     else:
-        envs = gym.make(env_name, goal_velocity=goal_velocity)
+        envs = gym.make(env_name, max_episode_steps=100)
+        envs = HeightRewardWrapper(envs)
+        envs.unwrapped.gravity = gravity
     for wrapper in wrappers:
         envs = wrapper(envs)
     envs.reset(seed=seed)
@@ -88,3 +95,41 @@ def create_vectorized_mc_from_hparams(
         is_vec=is_vec,
         goal_velocity=hparams_env["goal_velocity"],
     )
+
+
+class HeightRewardWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.mc: MountainCarEnv = env.unwrapped
+
+    def step(self, action):
+        obs, _, terminated, truncated, info = self.env.step(action)
+
+        height = self.mc._height(obs[0])
+
+        # height = np.sin(3 * xs) * 0.45 + 0.55
+        reward = ((height - 0.55) / 0.45 - 1) / 2
+
+        return obs, reward, terminated, truncated, info
+
+
+class VecHeightRewardWrapper(gym.vector.VectorWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def step(self, actions):
+        obs, _, terminations, truncations, infos = self.env.step(actions)
+
+        positions = obs[:, 0]
+
+        # _height is scalar, so vectorize it
+        heights = np.array(
+            [
+                self.env.envs[i].unwrapped._height(positions[i])
+                for i in range(self.num_envs)
+            ]
+        )
+
+        rewards = ((heights - 0.55) / 0.45 - 1) / 2
+
+        return obs, rewards, terminations, truncations, infos

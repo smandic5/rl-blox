@@ -14,7 +14,7 @@ params_frozen_lake = dict(
 )
 params_mountain_car = dict(
     env_name="MountainCar-v0",
-    goal_velocity=[0.1, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
+    goal_velocity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 24.7, 15.0, 6.0, 13.0],
 )
 params_cartpole = dict(
     env_name="CartPole-v1",
@@ -28,15 +28,15 @@ params_pendulum = dict(
     env_name="Pendulum-v1",
     gravity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 24.7, 15.0, 6.0, 13.0],
 )
-params_env = params_cartpole
+params_env = params_mountain_car
 
 hparams_model = dict(
-    actor_hidden_layers=[256, 256],
+    actor_hidden_layers=[1024, 1024],
     actor_activation="relu",
-    actor_learning_rate=3e-4,
-    critic_hidden_layers=[256, 256],
+    actor_learning_rate=0.0003,
+    critic_hidden_layers=[1024, 1024],
     critic_activation="relu",
-    critic_learning_rate=1e-3,
+    critic_learning_rate=0.001,
 )
 
 hparams_algorithm = dict(

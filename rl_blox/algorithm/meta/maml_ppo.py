@@ -144,10 +144,10 @@ def train_maml_ppo(
 
     is_weighted_ts = isinstance(task_selector, WeightedTaskSelector)
     optimizer_actor_inner = nnx.Optimizer(
-        actor, optax.rprop(inner_actor_lr), wrt=nnx.Param
+        actor, optax.rprop(inner_actor_lr / 10), wrt=nnx.Param
     )
     optimizer_critic_inner = nnx.Optimizer(
-        critic, optax.rprop(inner_critic_lr), wrt=nnx.Param
+        critic, optax.rprop(inner_critic_lr / 10), wrt=nnx.Param
     )
 
     for iteration in trange(iterations, disable=not progress_bar):
