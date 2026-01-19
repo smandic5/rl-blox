@@ -15,35 +15,30 @@ from experiments.hparams import (
 from rl_blox.blox.env_util import AppendHistoryWrapper
 from rl_blox.blox.vec_env_util import AppendHistoryVecEnvWrapper
 
-env_name = "MountainCar-v0"
+env_name = "HalfCheetah-v5"
 
 vec_env_wrappers = []
 env_wrappers = []
 
 
-def create_mountain_car(
+def create_half_cheetah(
     num_sub_envs: int,
     seed: int,
     wrappers: list[Type[gym.vector.VectorWrapper | gym.Wrapper]] = [],
     is_vec: bool = True,
     vectorization_mode: str = "sync",
-    goal_velocity: float = 9.8,
+    gravity: float = 9.8,
 ):
-    gravity = goal_velocity / 4000
     if is_vec:
         envs = gym.make_vec(
             env_name,
             num_envs=num_sub_envs,
             vectorization_mode=vectorization_mode,
-            max_episode_steps=200,
+            max_episode_steps=1000,
         )
-        envs = VecHeightRewardWrapper(envs)
         envs.unwrapped.set_attr("gravity", gravity)
     else:
-        envs = gym.make(
-            env_name, max_episode_steps=200, render_mode="rgb_array"
-        )
-        envs = HeightRewardWrapper(envs)
+        envs = gym.make(env_name, max_episode_steps=1000)
         envs.unwrapped.gravity = gravity
     for wrapper in wrappers:
         envs = wrapper(envs)
@@ -51,29 +46,29 @@ def create_mountain_car(
     return envs
 
 
-def create_mc_set(
+def create_hc_set(
     num_envs: int,
     num_sub_envs: int,
     seeds: list[int],
     wrappers: list[Type[gym.vector.VectorWrapper | gym.Wrapper]] = [],
     is_vec: bool = True,
     vectorization_mode: str = "sync",
-    goal_velocity: float = 0.1,
+    gravity: float = 0.1,
 ) -> list[gym.vector.VectorEnv | gym.vector.VectorWrapper]:
     return [
-        create_mountain_car(
+        create_half_cheetah(
             num_sub_envs,
             seeds[i],
             wrappers,
             is_vec,
             vectorization_mode,
-            goal_velocity[i],
+            gravity[i],
         )
         for i in range(num_envs)
     ]
 
 
-def create_vectorized_mc_from_hparams(
+def create_vectorized_hc_from_hparams(
     set_size: int,
     hparams_algorithm: dict,
     hparams_env: dict,
@@ -82,6 +77,9 @@ def create_vectorized_mc_from_hparams(
     ignore_wrappers: bool = False,
     recurrent_model: bool = False,
 ):
+
+    print("creating half cheetah")
+
     seeds = jax.random.randint(
         key,
         set_size,
@@ -95,50 +93,11 @@ def create_vectorized_mc_from_hparams(
             AppendHistoryVecEnvWrapper if is_vec else AppendHistoryWrapper
         ]
 
-    return create_mc_set(
+    return create_hc_set(
         set_size,
         hparams_algorithm["num_envs"],
         seeds,
         wrappers=[] if ignore_wrappers else wrappers,
         is_vec=is_vec,
-        goal_velocity=hparams_env["goal_velocity"],
+        gravity=hparams_env["gravity"],
     )
-
-
-class HeightRewardWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.mc: MountainCarEnv = env.unwrapped
-
-    def step(self, action):
-        obs, _, terminated, truncated, info = self.env.step(action)
-
-        height = self.mc._height(obs[0])
-
-        # height = np.sin(3 * xs) * 0.45 + 0.55
-        reward = ((height - 0.55) / 0.45 - 1) / 2
-        print(f"{self.mc.gravity} - {action} - {reward}")
-
-        return obs, reward, terminated, truncated, info
-
-
-class VecHeightRewardWrapper(gym.vector.VectorWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-
-    def step(self, actions):
-        obs, _, terminations, truncations, infos = self.env.step(actions)
-
-        positions = obs[:, 0]
-
-        # _height is scalar, so vectorize it
-        heights = np.array(
-            [
-                self.env.envs[i].unwrapped._height(positions[i])
-                for i in range(self.num_envs)
-            ]
-        )
-
-        rewards = ((heights - 0.55) / 0.45 - 1) / 2
-
-        return obs, rewards, terminations, truncations, infos

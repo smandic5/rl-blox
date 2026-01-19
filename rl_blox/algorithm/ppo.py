@@ -96,6 +96,7 @@ def collect_trajectories(
         # print(action)
         value = critic(obs)
         next_obs, reward, terminated, truncated, info = envs.step(action)
+        # print(f"{obs[0,0]} - {reward[0]} - {envs.unwrapped.envs[0].unwrapped._height(obs[0,0])}")
         trajectory_collector.update(
             obs,
             action,
@@ -376,9 +377,12 @@ def train_ppo(
         if logger is not None:
             logger.record_stat("loss", loss_val.item(), step=iteration)
             for metric_name in ["return", "success"]:
-                x, y = mem_logger.get_stat(metric_name)
-                logger.record_stat(
-                    f"average_{metric_name}", jnp.average(y), step=iteration
-                )
+                try:
+                    x, y = mem_logger.get_stat(metric_name)
+                    logger.record_stat(
+                        f"average_{metric_name}", jnp.average(y), step=iteration
+                    )
+                except:
+                    pass
 
     return actor, critic, optimizer_actor, optimizer_critic

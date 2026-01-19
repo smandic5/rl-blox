@@ -12,6 +12,7 @@ from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 from .helpers.cart_pole_factory import create_vectorized_cp_from_hparams
 from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
+from .helpers.half_cheetah import create_vectorized_hc_from_hparams
 from .helpers.inverted_pendulum_factory import create_vectorized_ip_from_hparams
 from .helpers.mountain_car_factory import create_vectorized_mc_from_hparams
 from .helpers.pendulum_factory import create_vectorized_pd_from_hparams
@@ -29,6 +30,7 @@ from .hparams import (
     params_cartpole,
     params_env,
     params_frozen_lake,
+    params_half_cheetah,
     params_inverted_pendulum,
     params_mountain_car,
     params_pendulum,
@@ -102,6 +104,19 @@ create_ip_env = partial(
     hparams_env=params_inverted_pendulum,
     is_vec=False,
 )
+create_vec_hc_env = partial(
+    create_vectorized_hc_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_half_cheetah,
+)
+create_hc_env = partial(
+    create_vectorized_hc_from_hparams,
+    set_size=hparams_algorithm["set_size_train"],
+    hparams_algorithm=hparams_algorithm,
+    hparams_env=params_half_cheetah,
+    is_vec=False,
+)
 if params_env == params_frozen_lake:
     create_vec_env = create_vec_fl_env
     create_env = create_fl_env
@@ -117,6 +132,9 @@ elif params_env == params_cartpole:
 elif params_env == params_pendulum:
     create_vec_env = create_vec_pd_env
     create_env = create_pd_env
+elif params_env == params_half_cheetah:
+    create_vec_env = create_vec_hc_env
+    create_env = create_hc_env
 else:
     raise Exception("Unreognized env params")
 
@@ -128,7 +146,8 @@ def get_num_features_actions(envs: gym.vector.VectorEnv) -> tuple[int, int]:
         return features, actions
     else:
         features = int(envs.single_observation_space.shape[0])
-        return features, 1
+        actions = int(envs.single_action_space.shape[0])
+        return features, actions
 
 
 # ------------------- Algorithm

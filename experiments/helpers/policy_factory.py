@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
+from rl_blox.blox.function_approximator.gaussian_mlp import GaussianMLP
 from rl_blox.blox.function_approximator.mlp import MLP
 from rl_blox.blox.function_approximator.policy_head import (
     GaussianTanhPolicy,
@@ -38,6 +39,15 @@ def create_policies(
     )
     actor = (RecurrentSoftmaxPolicy if is_recurrent else SoftmaxPolicy)(actor)
     # actor = (RecurrentSoftmaxPolicy if is_recurrent else GaussianTanhPolicy)(actor, action_space=action_space)
+    policy_net = GaussianMLP(
+        shared_head=True,
+        n_features=features,
+        n_outputs=action_space.shape[0],
+        hidden_nodes=list(hparams_model["actor_hidden_layers"]),
+        activation="swish",
+        rngs=nnx.Rngs(key_actor),
+    )
+    actor = GaussianTanhPolicy(policy_net, action_space=action_space)
 
     critic = (StackedGRU if is_recurrent else MLP)(
         features,

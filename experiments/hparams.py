@@ -1,7 +1,7 @@
 MAML_NAME = "MAML_PPO"
 RL2_NAME = "RL2_PPO"
 algorithm_to_use = MAML_NAME
-save_frequency = 50
+save_frequency = 500
 checkpoint_path = "./experiments/checkpoints/"
 
 params_frozen_lake = dict(
@@ -16,6 +16,10 @@ params_mountain_car = dict(
     env_name="MountainCar-v0",
     goal_velocity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 24.7, 15.0, 6.0, 13.0],
 )
+params_half_cheetah = dict(
+    env_name="HalfCheetah-v5",
+    gravity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 6.7, 15.0, 6.0, 13.0],
+)
 params_cartpole = dict(
     env_name="CartPole-v1",
     gravity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 24.7, 15.0, 6.0, 13.0],
@@ -28,7 +32,7 @@ params_pendulum = dict(
     env_name="Pendulum-v1",
     gravity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 24.7, 15.0, 6.0, 13.0],
 )
-params_env = params_mountain_car
+params_env = params_half_cheetah
 
 hparams_model = dict(
     actor_hidden_layers=[1024, 1024],
@@ -40,16 +44,16 @@ hparams_model = dict(
 )
 
 hparams_algorithm = dict(
-    num_envs=32,
-    batch_size=128,
-    iterations=1000,
+    num_envs=8,
+    batch_size=30,
+    iterations=100000,
     set_size_train=10,
-    epochs=1,
+    epochs=5,
 )
 
 hparams_eval = dict(
     seed_change_by=10,
-    iterations=100,
+    iterations=100000,
     set_size_test=2,
-    epochs=3,
+    epochs=1,
 )

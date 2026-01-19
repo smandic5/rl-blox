@@ -159,9 +159,9 @@ class GaussianTanhPolicy(StochasticPolicyBase):
         self, observation: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
         res = self.net(observation)
-        y = res[:, 0]
-        log_var = res[:, 1]
-        # y, log_var = self.net(observation)
+        # y = res[:, 0]
+        # log_var = res[:, 1]
+        y, log_var = self.net(observation)
         mean = nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)

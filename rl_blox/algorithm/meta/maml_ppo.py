@@ -18,6 +18,29 @@ from ...blox.multitask import TaskSelector, WeightedTaskSelector
 from ...logging.logger import LoggerBase, MemoryLogger
 from ..ppo import collect_trajectories, ppo_loss, train_ppo, update_ppo
 
+_ADAPTING_METRICS = ["average_return", "average_success"]
+_ADAPTED_METRICS = ["return", "success"]
+
+
+def log_return_success_loss(
+    logger: LoggerBase,
+    logger_results: MemoryError,
+    iteration: int,
+    suffix: str = "while_adapting",
+) -> tuple[float, float]:
+    res = []
+    adapting = suffix == "while_adapting"
+    for metric_name in _ADAPTING_METRICS if adapting else _ADAPTED_METRICS:
+        x, y = logger_results.get_stat(metric_name)
+        value = y[-1] if metric_name == "loss" else jnp.average(y)
+        logger.record_stat(
+            f"{"average_" if not adapting else ""}{metric_name}_{suffix}",
+            value,
+            step=iteration,
+        )
+        res.append(value)
+    return res
+
 
 def inner_loop(
     envs: gym.vector.VectorEnv,
@@ -47,14 +70,7 @@ def inner_loop(
         progress_bar=False,
     )
     if logger is not None:
-        for metric_name in ["average_return", "average_success", "loss"]:
-            x, y = logger_adapting.get_stat(metric_name)
-            value = y[-1] if metric_name == "loss" else jnp.average(y)
-            logger.record_stat(
-                f"{metric_name}_while_adapting",
-                value,
-                step=current_iteration,
-            )
+        log_return_success_loss(logger, logger_adapting, current_iteration)
 
     # collect trajectory with adapted model
     logger_adapted = logger if logger is None else MemoryLogger()
@@ -77,26 +93,8 @@ def inner_loop(
         reach_batch_size=True,
     )
     if logger is not None:
-        try:
-            total_episodes = (
-                len(logger_adapted.get_stat("return")[0]) + batch_size
-            )
-        except:
-            total_episodes = batch_size
-        logger.record_stat(
-            "average_return_after_adapting",
-            jnp.sum(reward).item() / total_episodes,
-            step=current_iteration,
-        )
-        try:
-            _, success = logger_adapted.get_stat("success")
-            success_rate = sum(success) / len(success)
-        except:
-            success_rate = 1
-        logger.record_stat(
-            "average_success_after_adapting",
-            success_rate,
-            step=current_iteration,
+        ret, success = log_return_success_loss(
+            logger, logger_adapted, current_iteration, "after_adapting"
         )
 
     # calc loss
@@ -108,7 +106,7 @@ def inner_loop(
         actor, critic, logp, observation, action, advs, returns
     )
 
-    return adapted_loss_val, (jnp.average(reward).item(), success_rate)
+    return adapted_loss_val, (ret, success)
 
 
 loss_grad_fn = nnx.value_and_grad(inner_loop, argnums=(1, 2), has_aux=True)
