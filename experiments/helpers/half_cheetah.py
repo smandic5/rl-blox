@@ -17,7 +17,10 @@ from rl_blox.blox.vec_env_util import AppendHistoryVecEnvWrapper
 
 env_name = "HalfCheetah-v5"
 
-vec_env_wrappers = []
+vec_env_wrappers = [
+    gym.wrappers.vector.NormalizeObservation,
+    gym.wrappers.vector.ClipAction,
+]  # , gym.wrappers.vector.NormalizeReward
 env_wrappers = []
 
 
