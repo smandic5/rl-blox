@@ -9,6 +9,7 @@ from experiments.factory_getters import (
 from experiments.hparams import (
     algorithm_to_use,
     hparams_algorithm,
+    hparams_backbone,
     hparams_eval,
     hparams_model,
     params_env,
@@ -41,9 +42,11 @@ def train_with_task_selector(hparams_task_selector: dict, name: str, seed: int):
         optimizer_actor,
         optimizer_critic,
         iterations=hparams_eval["iterations"],
-        epochs=hparams_eval["epochs"],
+        epochs=hparams_backbone["backbone_epochs"],
+        rollout_length=hparams_backbone["rollout_length"],
+        batch_size=hparams_backbone["batch_size"],
+        seed=1,
         logger=logger,
-        batch_size=hparams_algorithm["batch_size"],
     )
 
 

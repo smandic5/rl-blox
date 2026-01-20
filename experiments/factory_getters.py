@@ -25,6 +25,7 @@ from .hparams import (
     algorithm_to_use,
     checkpoint_path,
     hparams_algorithm,
+    hparams_backbone,
     hparams_eval,
     hparams_model,
     params_cartpole,

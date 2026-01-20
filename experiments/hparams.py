@@ -44,11 +44,16 @@ hparams_model = dict(
 )
 
 hparams_algorithm = dict(
-    num_envs=8,
-    batch_size=30,
+    num_envs=32,
     iterations=100000,
     set_size_train=10,
-    epochs=5,
+    meta_epochs=5,
+)
+
+hparams_backbone = dict(
+    rollout_length=32,
+    batch_size=128,
+    backbone_epochs=4,
 )
 
 hparams_eval = dict(

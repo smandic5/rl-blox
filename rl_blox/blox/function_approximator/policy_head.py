@@ -158,15 +158,17 @@ class GaussianTanhPolicy(StochasticPolicyBase):
     def __call__(
         self, observation: jnp.ndarray
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
-        res = self.net(observation)
-        # y = res[:, 0]
-        # log_var = res[:, 1]
         y, log_var = self.net(observation)
         mean = nnx.tanh(y) * jnp.broadcast_to(
             self.action_scale.value, y.shape
         ) + jnp.broadcast_to(self.action_bias.value, y.shape)
         log_std = jnp.clip(0.5 * log_var, -20.0, 2.0)
         std = jnp.exp(log_std)
+        """jax.debug.print("-------")
+        jax.debug.print("{x}", x=y[0])
+        jax.debug.print("{x}", x=log_var[0])
+        jax.debug.print("{x}", x=log_std[0])
+        jax.debug.print("{x}", x=std[0])"""
         return mean, std
 
     @nnx.jit

@@ -22,11 +22,11 @@ def collect_trajectories(
     actor: StochasticPolicyBase,
     critic: nnx.Module,
     key: jnp.ndarray,
-    batch_size: int = 64,
+    rollout_length: int = 64,
     logger: LoggerBase | None = None,
     last_observation=None,
     global_step: int = 0,
-    reach_batch_size: bool = True,
+    reach_rollout_length: bool = True,
 ) -> tuple[
     jnp.ndarray,
     jnp.ndarray,
@@ -38,7 +38,7 @@ def collect_trajectories(
     int,
 ]:
     """
-    Run and collect trajectories until at least `batch_size` steps are gathered.
+    Run and collect trajectories until at least `rollout_length` steps are gathered.
 
     Parameters
     ----------
@@ -50,7 +50,7 @@ def collect_trajectories(
         The critic network.
     key : jnp.ndarray
         Random key.
-    batch_size : int, optional
+    rollout_length : int, optional
         Minimum number of steps to collect.
     logger : LoggerBase, optional
         Experiment Logger.
@@ -81,15 +81,15 @@ def collect_trajectories(
 
     trajectory_collector = TrajectoryCollector(
         envs.num_envs,
-        batch_size * 2,
+        rollout_length * 2,
         envs.single_observation_space.shape,
         envs.single_action_space.shape,
         save_hidden_states=False,
     )
     obs = envs.reset()[0] if last_observation is None else last_observation
 
-    subkeys = jax.random.split(key, batch_size)
-    for i in range(batch_size * 2):
+    subkeys = jax.random.split(key, rollout_length)
+    for i in range(rollout_length * 2):
         action = actor.sample(obs, subkeys[i])
         # action = np.asarray([i.item() for i in action]).reshape(-1,1)
         action = np.asarray(action)
@@ -123,22 +123,22 @@ def collect_trajectories(
                 global_step += int(l)
                 if logger is not None:
                     logger.record_stat("return", float(r), step=global_step)
-                    logger.record_stat(
-                        "success", terminated[index], step=global_step
-                    )
+                    # logger.record_stat(
+                    #    "success", terminated[index], step=global_step
+                    # )
                     logger.start_new_episode()
 
         obs = next_obs
         reached_size = (
             trajectory_collector.current_batch_size()
-            >= batch_size * envs.num_envs
+            >= rollout_length * envs.num_envs
         )
-        if reached_size or (not reach_batch_size and i >= batch_size):
+        if reached_size or (not reach_rollout_length and i >= rollout_length):
             break
 
     value = critic(obs)
     batch = trajectory_collector.get_batch(
-        value, batch_size * envs.num_envs if reach_batch_size else None
+        value, rollout_length * envs.num_envs if reach_rollout_length else None
     )
 
     return namedtuple(
@@ -173,7 +173,7 @@ def ppo_loss(
     advantages: jnp.ndarray,
     returns: jnp.ndarray,
     clip: float = 0.2,
-) -> jnp.ndarray:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Calculate the PPO loss.
 
@@ -202,7 +202,10 @@ def ppo_loss(
         The computed PPO loss for the batch.
     """
     logps = actor.log_probability(observations, actions)
-    ratios = jnp.exp(logps - old_logps)
+    log_ratios = logps - old_logps
+    ratios = jnp.exp(log_ratios)
+    approx_kl = jnp.mean((ratios - 1) - (log_ratios))
+
     surrogate1 = ratios * advantages
     surrogate2 = jnp.clip(ratios, 1 - clip, 1 + clip) * advantages
     policy_loss = -jnp.mean(jnp.minimum(surrogate1, surrogate2))
@@ -214,13 +217,12 @@ def ppo_loss(
         policy_loss
         + 0.5 * value_loss
         - 0.01 * actor.entropy(observations).mean()
-    )
+    ), approx_kl
 
 
-loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1))
+loss_grad_fn = nnx.value_and_grad(ppo_loss, argnums=(0, 1), has_aux=True)
 
 
-@partial(nnx.jit, static_argnames="epochs")
 def update_ppo(
     actor: StochasticPolicyBase,
     critic: nnx.Module,
@@ -231,7 +233,10 @@ def update_ppo(
     reward: jnp.ndarray,
     terminated: jnp.ndarray,
     next_value: jnp.ndarray,
-    epochs: int = 1,
+    key: jnp.ndarray,
+    batch_size: int = 128,
+    rollout_size: int = 32 * 32,
+    epochs: int = 10,
 ) -> jnp.ndarray:
     """Updates the PPO agent.
 
@@ -251,6 +256,12 @@ def update_ppo(
         Flags indicating episode termination per step.
     next_value : jnp.ndarray
         Array of predicted next_values per step.
+    key: jnp.ndarray
+        Random key.
+    batch_size : int
+        Batch size.
+    rollout_size : int
+        Rollout size.
     epochs : int, optional
         Number of training epochs.
 
@@ -259,19 +270,45 @@ def update_ppo(
     loss_val : jnp.ndarray
         Calculated loss.
     """
-    advs, returns = compute_gae(
-        reward, critic(observation).flatten(), next_value, terminated
-    )
+    value: jnp.ndarray = critic(observation).squeeze(-1)
+    advs, returns = compute_gae(reward, value, next_value, terminated)
     logp = actor.log_probability(observation, action)
+    logp = jax.lax.stop_gradient(logp)
 
-    for _ in range(epochs):
-        (loss_val), (grad_actor, grad_critic) = loss_grad_fn(
-            actor, critic, logp, observation, action, advs, returns
-        )
-        optimizer_actor.update(actor, grad_actor)
-        optimizer_critic.update(critic, grad_critic)
+    subkeys = jax.random.split(key, epochs)
+    for epoch in range(epochs):
+        perm = jax.random.permutation(subkeys[epoch], value.shape[0])
+        for i in range(0, rollout_size, batch_size):
+            minibatch = perm[i : i + batch_size]
+            (loss_val, approx_kl), (grad_actor, grad_critic) = loss_grad_fn(
+                actor,
+                critic,
+                logp[minibatch],
+                observation[minibatch],
+                action[minibatch],
+                advs[minibatch],
+                returns[minibatch],
+            )
+            if approx_kl.item() > 0.01:
+                break
+            update_models(
+                actor,
+                critic,
+                optimizer_actor,
+                optimizer_critic,
+                grad_actor,
+                grad_critic,
+            )
 
     return loss_val
+
+
+@nnx.jit
+def update_models(
+    actor, critic, optimizer_actor, optimizer_critic, grad_actor, grad_critic
+):
+    optimizer_actor.update(actor, grad_actor)
+    optimizer_critic.update(critic, grad_critic)
 
 
 def train_ppo(
@@ -282,7 +319,8 @@ def train_ppo(
     optimizer_critic: nnx.Optimizer,
     iterations: int = 3000,
     epochs: int = 1,
-    batch_size: int = 64,
+    rollout_length: int = 128,
+    batch_size: int = 128,
     seed: int = 1,
     key: jnp.ndarray = None,
     logger: LoggerBase | None = None,
@@ -307,8 +345,10 @@ def train_ppo(
         Number of training iterations.
     epochs : int, optional
         Number of training epochs per iteration.
+    rollout_length : int, optional
+        Sampled episode length.
     batch_size : int, optional
-        Batch size per update.
+        Batch size.
     seed : int, optional
         Random seed for reproducibility.
     logger : LoggerBase, optional
@@ -341,7 +381,7 @@ def train_ppo(
         if logger != None:
             mem_logger = MemoryLogger()
             list_logger = LoggerList([mem_logger, logger])
-        key, subkey = jax.random.split(key)
+        key, subkey_traj, subkey_update = jax.random.split(key, 3)
         (
             observation,
             action,
@@ -354,8 +394,8 @@ def train_ppo(
             envs,
             actor,
             critic,
-            subkey,
-            batch_size,
+            subkey_traj,
+            rollout_length,
             list_logger,
             last_observation,
             global_step,
@@ -371,6 +411,9 @@ def train_ppo(
             reward,
             terminated,
             next_value,
+            subkey_update,
+            batch_size,
+            rollout_length * envs.num_envs,
             epochs,
         )
 
