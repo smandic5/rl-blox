@@ -54,4 +54,8 @@ def compute_gae(
     advantages = advantages[::-1]
     returns = advantages + values
     advantages = jax.nn.standardize(advantages)
+
+    advantages = jax.lax.stop_gradient(advantages)
+    returns = jax.lax.stop_gradient(returns)
+
     return namedtuple("GAE", ["advantages", "returns"])(advantages, returns)
