@@ -56,10 +56,24 @@ class MLP(nnx.Module):
         self.hidden_layers = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            self.hidden_layers.append(
+                nnx.Linear(
+                    n_in,
+                    n_out,
+                    rngs=rngs,
+                    kernel_init=nnx.initializers.orthogonal(scale=jnp.sqrt(2)),
+                    bias_init=nnx.initializers.zeros_init(),
+                )
+            )
             n_in = n_out
 
-        self.output_layer = nnx.Linear(n_in, n_outputs, rngs=rngs)
+        self.output_layer = nnx.Linear(
+            n_in,
+            n_outputs,
+            rngs=rngs,
+            kernel_init=nnx.initializers.orthogonal(scale=1),
+            bias_init=nnx.initializers.zeros_init(),
+        )
 
     @nnx.jit
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:

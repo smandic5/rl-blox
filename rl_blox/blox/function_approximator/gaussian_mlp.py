@@ -66,13 +66,27 @@ class GaussianMLP(nnx.Module):
         self.hidden_layers = []
         n_in = n_features
         for n_out in hidden_nodes:
-            self.hidden_layers.append(nnx.Linear(n_in, n_out, rngs=rngs))
+            self.hidden_layers.append(
+                nnx.Linear(
+                    n_in,
+                    n_out,
+                    rngs=rngs,
+                    kernel_init=nnx.initializers.orthogonal(scale=jnp.sqrt(2)),
+                    bias_init=nnx.initializers.zeros_init(),
+                )
+            )
             n_in = n_out
 
         self.output_layers = []
         if shared_head:
             self.output_layers.append(
-                nnx.Linear(n_in, 2 * n_outputs, rngs=rngs)
+                nnx.Linear(
+                    n_in,
+                    2 * n_outputs,
+                    rngs=rngs,
+                    kernel_init=nnx.initializers.orthogonal(scale=0.01),
+                    bias_init=nnx.initializers.zeros_init(),
+                )
             )
         else:
             self.output_layers.append(nnx.Linear(n_in, n_outputs, rngs=rngs))
