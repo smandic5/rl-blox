@@ -276,31 +276,69 @@ def update_ppo(
     logp = jax.lax.stop_gradient(logp)
 
     subkeys = jax.random.split(key, epochs)
+    loss_val = None
     for epoch in range(epochs):
         perm = jax.random.permutation(subkeys[epoch], value.shape[0])
-        for i in range(0, rollout_size, batch_size):
-            minibatch = perm[i : i + batch_size]
-            (loss_val, approx_kl), (grad_actor, grad_critic) = loss_grad_fn(
-                actor,
-                critic,
-                logp[minibatch],
-                observation[minibatch],
-                action[minibatch],
-                advs[minibatch],
-                returns[minibatch],
-            )
-            if approx_kl.item() > 0.01:
-                break
-            update_models(
-                actor,
-                critic,
-                optimizer_actor,
-                optimizer_critic,
-                grad_actor,
-                grad_critic,
-            )
+        loss_val, kl_break = update_minibatch(
+            actor,
+            critic,
+            optimizer_actor,
+            optimizer_critic,
+            observation,
+            action,
+            batch_size,
+            rollout_size,
+            advs,
+            returns,
+            logp,
+            perm,
+        )
+        if kl_break:
+            break
 
     return loss_val
+
+
+def update_minibatch(
+    actor,
+    critic,
+    optimizer_actor,
+    optimizer_critic,
+    observation,
+    action,
+    batch_size,
+    rollout_size,
+    advs,
+    returns,
+    logp,
+    perm,
+):
+    last_valid = None
+    for i in range(0, rollout_size, batch_size):
+        minibatch = perm[i : i + batch_size]
+        (loss_val, approx_kl), (grad_actor, grad_critic) = loss_grad_fn(
+            actor,
+            critic,
+            logp[minibatch],
+            observation[minibatch],
+            action[minibatch],
+            advs[minibatch],
+            returns[minibatch],
+        )
+        last_valid = loss_val
+
+        if approx_kl.item() > 0.01:
+            return last_valid, True
+
+        update_models(
+            actor,
+            critic,
+            optimizer_actor,
+            optimizer_critic,
+            grad_actor,
+            grad_critic,
+        )
+    return last_valid, False
 
 
 @nnx.jit
