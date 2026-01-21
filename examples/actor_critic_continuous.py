@@ -7,15 +7,15 @@ from rl_blox.algorithm.reinforce import create_policy_gradient_continuous_state
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 # env_name = "Pendulum-v1"
-# env_name = "HalfCheetah-v4"
-env_name = "InvertedPendulum-v5"
+env_name = "HalfCheetah-v5"
+# env_name = "InvertedPendulum-v5"
 env = gym.make(env_name)
 seed = 42
 env.reset(seed=seed)
 
 hparams_model = dict(
     policy_shared_head=True,
-    policy_hidden_nodes=[32, 32],
+    policy_hidden_nodes=[64, 64],
     policy_learning_rate=3e-4,
     value_network_hidden_nodes=[128, 128],
     value_network_learning_rate=1e-2,
@@ -24,14 +24,15 @@ hparams_model = dict(
 hparams_algorithm = dict(
     policy_gradient_steps=5,
     value_gradient_steps=5,
-    total_timesteps=900_000,
+    total_timesteps=90_000_000,
     gamma=0.99,
     steps_per_update=5_000,
     train_after_episode=False,
     seed=seed,
 )
 
-logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
+# logger = LoggerList([StandardLogger(verbose=2), AIMLogger()])
+logger = AIMLogger()
 logger.define_experiment(
     env_name=env_name,
     algorithm_name="Actor-Critic",
