@@ -12,7 +12,7 @@ from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 from .helpers.cart_pole_factory import create_vectorized_cp_from_hparams
 from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
-from .helpers.half_cheetah import create_vectorized_hc_from_hparams
+from .helpers.half_cheetah_factory import create_vectorized_hc_from_hparams
 from .helpers.inverted_pendulum_factory import create_vectorized_ip_from_hparams
 from .helpers.mountain_car_factory import create_vectorized_mc_from_hparams
 from .helpers.pendulum_factory import create_vectorized_pd_from_hparams
