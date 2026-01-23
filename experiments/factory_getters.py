@@ -10,12 +10,7 @@ from rl_blox.algorithm.meta.rl2_ppo import train_rl2_ppo
 from rl_blox.logging.checkpointer import OrbaxCheckpointer
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
-from .helpers.cart_pole_factory import create_vectorized_cp_from_hparams
-from .helpers.frozen_lake_factory import create_vectorized_fl_from_hparams
-from .helpers.half_cheetah_factory import create_vectorized_hc_from_hparams
-from .helpers.inverted_pendulum_factory import create_vectorized_ip_from_hparams
-from .helpers.mountain_car_factory import create_vectorized_mc_from_hparams
-from .helpers.pendulum_factory import create_vectorized_pd_from_hparams
+from .env_factory import make_env, make_vec_env, make_vec_env_set
 from .helpers.policy_factory import create_policies
 from .helpers.task_selector_configurations import get_ts_config
 from .helpers.task_selector_factory import get_task_selector
@@ -28,116 +23,9 @@ from .hparams import (
     hparams_backbone,
     hparams_eval,
     hparams_model,
-    params_cartpole,
     params_env,
-    params_frozen_lake,
-    params_half_cheetah,
-    params_inverted_pendulum,
-    params_mountain_car,
-    params_pendulum,
     save_frequency,
 )
-
-# ------------------- Env
-
-create_vec_fl_env = partial(
-    create_vectorized_fl_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_frozen_lake,
-)
-create_fl_env = partial(
-    create_vectorized_fl_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_frozen_lake,
-    is_vec=False,
-)
-create_vec_mc_env = partial(
-    create_vectorized_mc_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_mountain_car,
-)
-create_mc_env = partial(
-    create_vectorized_mc_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_mountain_car,
-    is_vec=False,
-)
-create_vec_cp_env = partial(
-    create_vectorized_cp_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_cartpole,
-)
-create_cp_env = partial(
-    create_vectorized_cp_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_cartpole,
-    is_vec=False,
-)
-create_vec_pd_env = partial(
-    create_vectorized_pd_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_pendulum,
-)
-create_pd_env = partial(
-    create_vectorized_pd_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_pendulum,
-    is_vec=False,
-)
-create_vec_ip_env = partial(
-    create_vectorized_ip_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_inverted_pendulum,
-)
-create_ip_env = partial(
-    create_vectorized_ip_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_inverted_pendulum,
-    is_vec=False,
-)
-create_vec_hc_env = partial(
-    create_vectorized_hc_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_half_cheetah,
-)
-create_hc_env = partial(
-    create_vectorized_hc_from_hparams,
-    set_size=hparams_algorithm["set_size_train"],
-    hparams_algorithm=hparams_algorithm,
-    hparams_env=params_half_cheetah,
-    is_vec=False,
-)
-if params_env == params_frozen_lake:
-    create_vec_env = create_vec_fl_env
-    create_env = create_fl_env
-elif params_env == params_mountain_car:
-    create_vec_env = create_vec_mc_env
-    create_env = create_mc_env
-elif params_env == params_inverted_pendulum:
-    create_vec_env = create_vec_ip_env
-    create_env = create_ip_env
-elif params_env == params_cartpole:
-    create_vec_env = create_vec_cp_env
-    create_env = create_cp_env
-elif params_env == params_pendulum:
-    create_vec_env = create_vec_pd_env
-    create_env = create_pd_env
-elif params_env == params_half_cheetah:
-    create_vec_env = create_vec_hc_env
-    create_env = create_hc_env
-else:
-    raise Exception("Unreognized env params")
 
 
 def get_num_features_actions(envs: gym.vector.VectorEnv) -> tuple[int, int]:
@@ -207,8 +95,7 @@ def prepare_training(hparams_task_selector, name, seed):
     prep_key = jax.random.key(seed)
     prep_key, subkey = jax.random.split(prep_key)
 
-    vec_env_set = create_vec_env(key=subkey)
-    env_set = create_env(key=subkey, ignore_wrappers=True)
+    vec_env_set: list[gym.vector.SyncVectorEnv] = make_vec_env_set(key=subkey)
     features, actions = get_num_features_actions(vec_env_set[0])
 
     prep_key, subkey = jax.random.split(prep_key)
@@ -216,7 +103,7 @@ def prepare_training(hparams_task_selector, name, seed):
         features=features,
         actions=actions,
         key=subkey,
-        action_space=env_set[0].action_space,
+        action_space=vec_env_set[0].envs[0].unwrapped.action_space,
     )
 
     prep_key, subkey = jax.random.split(prep_key)
@@ -225,7 +112,7 @@ def prepare_training(hparams_task_selector, name, seed):
         hparams_algorithm,
         subkey,
         actor,
-        env_set,
+        [sync_env.envs[0] for sync_env in vec_env_set],
     )
 
     logger = get_logger(name)

@@ -49,13 +49,14 @@ def train_with_task_selector(hparams_task_selector: dict, name: str, seed: int):
         logger=logger,
     )
 
+    envs = vec_env_set[0].close()
+
 
 def experiments_train():
     hparams_selector = get_task_selector_config(0)
-    for seed in range(5):
-        algorithm_name = algorithm_to_use + f"_{-1}_{seed}"
-        print(f"Training started for {algorithm_name}")
-        train_with_task_selector(hparams_selector, algorithm_name, seed)
+    algorithm_name = algorithm_to_use + f"_{-1}_{0}"
+    print(f"Training started for {algorithm_name}")
+    train_with_task_selector(hparams_selector, algorithm_name, 0)
 
 
 if __name__ == "__main__":
