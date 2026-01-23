@@ -58,10 +58,26 @@ def create_policies(
     )
 
     optimizer_actor = nnx.Optimizer(
-        actor, optax.adam(hparams_model["actor_learning_rate"]), wrt=nnx.Param
+        actor,
+        optax.adam(
+            optax.linear_schedule(
+                hparams_model["actor_learning_rate"],
+                hparams_model["actor_learning_rate"] / 1000,
+                1000,
+            )
+        ),
+        wrt=nnx.Param,
     )
     optimizer_critic = nnx.Optimizer(
-        critic, optax.adam(hparams_model["critic_learning_rate"]), wrt=nnx.Param
+        critic,
+        optax.adam(
+            optax.linear_schedule(
+                hparams_model["critic_learning_rate"],
+                hparams_model["critic_learning_rate"] / 1000,
+                1000,
+            )
+        ),
+        wrt=nnx.Param,
     )
 
     return actor, critic, optimizer_actor, optimizer_critic

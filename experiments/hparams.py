@@ -18,6 +18,7 @@ params_mountain_car = dict(
 )
 params_half_cheetah = dict(
     env_name="HalfCheetah-v5",
+    max_episode_steps=10,
     gravity=[9.8, 3.7, 8.8, 9.0, 10.5, 11.7, 6.7, 15.0, 6.0, 13.0],
 )
 params_cartpole = dict(
@@ -35,25 +36,26 @@ params_pendulum = dict(
 params_env = params_half_cheetah
 
 hparams_model = dict(
-    actor_hidden_layers=[1024, 1024],
+    actor_hidden_layers=[64, 64],
     actor_activation="relu",
     actor_learning_rate=0.0003,
-    critic_hidden_layers=[1024, 1024],
+    critic_hidden_layers=[256, 256],
     critic_activation="relu",
     critic_learning_rate=0.001,
 )
 
 hparams_algorithm = dict(
-    num_envs=32,
+    train_set_size=8,
     iterations=100000,
     set_size_train=10,
     meta_epochs=5,
 )
 
 hparams_backbone = dict(
-    rollout_length=32,
+    num_envs=2,
+    rollout_length=2048,
     batch_size=128,
-    backbone_epochs=4,
+    backbone_epochs=10,
 )
 
 hparams_eval = dict(
