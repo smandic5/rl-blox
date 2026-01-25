@@ -422,26 +422,7 @@ if __name__ == "__main__":
         )
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar(
-            "charts/learning_rate", optimizer.param_groups[0]["lr"], global_step
-        )
-        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-        writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-        writer.add_scalar(
-            "losses/old_approx_kl", old_approx_kl.item(), global_step
-        )
-        writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-        writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-        writer.add_scalar(
-            "losses/explained_variance", explained_var, global_step
-        )
         print("SPS:", int(global_step / (time.time() - start_time)))
-        writer.add_scalar(
-            "charts/SPS",
-            int(global_step / (time.time() - start_time)),
-            global_step,
-        )
         logger.record_stat(
             "learning_rate",
             optimizer.param_groups[0]["lr"],
@@ -457,13 +438,11 @@ if __name__ == "__main__":
         logger.record_stat(
             "entropy",
             entropy_loss.item(),
-            episode=global_step,
             step=global_step,
         )
         logger.record_stat(
             "old_approx_kl",
             old_approx_kl.item(),
-            episode=global_step,
             step=global_step,
         )
         logger.record_stat(
@@ -472,14 +451,10 @@ if __name__ == "__main__":
         logger.record_stat(
             "clipfrac",
             np.mean(clipfracs),
-            episode=global_step,
             step=global_step,
         )
         logger.record_stat(
-            "explained_variance",
-            explained_var,
-            episode=global_step,
-            step=global_step,
+            "explained_variance", explained_var, step=global_step
         )
 
     if args.save_model:
@@ -499,7 +474,9 @@ if __name__ == "__main__":
             gamma=args.gamma,
         )
         for idx, episodic_return in enumerate(episodic_returns):
-            writer.add_scalar("eval/episodic_return", episodic_return, idx)
+            logger.record_stat(
+                "eval/episodic_return", episodic_return, episode=idx, step=idx
+            )
 
         if args.upload_model:
             from cleanrl_utils.huggingface import push_to_hub
@@ -518,4 +495,3 @@ if __name__ == "__main__":
             )
 
     envs.close()
-    writer.close()
