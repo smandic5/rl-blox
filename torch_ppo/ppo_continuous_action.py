@@ -4,13 +4,13 @@ import time
 
 import gymnasium as gym
 import numpy as np
-import tyro
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
+import tyro
 from torch.distributions.normal import Normal
+
+from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 from .args import Args
 
