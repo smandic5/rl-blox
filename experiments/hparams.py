@@ -36,12 +36,12 @@ params_pendulum = dict(
 params_env = params_half_cheetah
 
 hparams_model = dict(
-    actor_hidden_layers=[64, 64],
+    actor_hidden_layers=[256, 256],
     actor_activation="relu",
-    actor_learning_rate=0.0003,
+    actor_learning_rate=2.0633e-05,
     critic_hidden_layers=[256, 256],
     critic_activation="relu",
-    critic_learning_rate=0.001,
+    critic_learning_rate=2.0633e-05,
 )
 
 hparams_algorithm = dict(
@@ -52,10 +52,10 @@ hparams_algorithm = dict(
 )
 
 hparams_backbone = dict(
-    num_envs=2,
-    rollout_length=2048,
-    batch_size=128,
-    backbone_epochs=10,
+    num_envs=1,
+    rollout_length=512,
+    batch_size=64,
+    backbone_epochs=20,
 )
 
 hparams_eval = dict(

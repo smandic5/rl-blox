@@ -141,6 +141,8 @@ def collect_trajectories(
         value, rollout_length * envs.num_envs if reach_rollout_length else None
     )
 
+    print(jnp.sum(batch[2]))
+
     return namedtuple(
         "PPO_Trajectory",
         [
@@ -172,7 +174,7 @@ def ppo_loss(
     actions: jnp.ndarray,
     advantages: jnp.ndarray,
     returns: jnp.ndarray,
-    clip: float = 0.2,
+    clip: float = 0.1,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Calculate the PPO loss.
@@ -215,8 +217,8 @@ def ppo_loss(
 
     return (
         policy_loss
-        + 0.5 * value_loss
-        - 0.01 * actor.entropy(observations).mean()
+        + 0.58096 * value_loss
+        - 0.000401762 * actor.entropy(observations).mean()
     ), approx_kl
 
 
@@ -237,6 +239,7 @@ def update_ppo(
     batch_size: int = 128,
     rollout_size: int = 32 * 32,
     epochs: int = 10,
+    logger: LoggerBase = None,
 ) -> jnp.ndarray:
     """Updates the PPO agent.
 
@@ -292,6 +295,7 @@ def update_ppo(
             returns,
             logp,
             perm,
+            logger,
         )
         if kl_break:
             break
@@ -312,6 +316,7 @@ def update_minibatch(
     returns,
     logp,
     perm,
+    logger: LoggerBase = None,
 ):
     last_valid = None
     for i in range(0, rollout_size, batch_size):
@@ -338,6 +343,10 @@ def update_minibatch(
             grad_actor,
             grad_critic,
         )
+
+        if logger is not None:
+            logger.record_stat("grad_policy", grad_actor)
+            logger.record_stat("grad_value", grad_critic)
     return last_valid, False
 
 

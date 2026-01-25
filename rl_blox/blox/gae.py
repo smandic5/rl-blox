@@ -10,8 +10,8 @@ def compute_gae(
     values: jnp.ndarray,
     next_values: jnp.ndarray,
     terminations: jnp.ndarray,
-    gamma: float = 0.99,
-    lmbda: float = 0.95,
+    gamma: float = 0.98,
+    lmbda: float = 0.92,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Compute Generalized Advantage Estimation (GAE).
