@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
-import torch.nn as nn
-import torch.optim as optim
 import tyro
-from torch.distributions.normal import Normal
 
 import torch
+import torch.nn as nn
+import torch.optim as optim
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
+from torch.distributions.normal import Normal
 
 
 @dataclass
