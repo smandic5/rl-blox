@@ -6,13 +6,12 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
-import torch
 import torch.nn as nn
 import torch.optim as optim
 import tyro
 from torch.distributions.normal import Normal
-from torch.utils.tensorboard import SummaryWriter
 
+import torch
 from rl_blox.logging.logger import AIMLogger, LoggerList, StandardLogger
 
 
@@ -26,12 +25,6 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = False
     """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: str = "sven-mandic-universit-t-bremen"
-    """the entity (team) of wandb's project"""
     capture_video: bool = False
     """whether to capture videos of the agent performances (check out `videos` folder)"""
     save_model: bool = True
@@ -178,29 +171,9 @@ if __name__ == "__main__":
     logger.define_experiment(
         env_name="TorchCheetah",
         algorithm_name="TorchPPO",
-        hparams=None,
+        hparams=vars(args),
     )
     logger.start_new_episode()
-    if args.track:
-        import wandb
-
-        wandb.init(
-            project=args.wandb_project_name,
-            entity=args.wandb_entity,
-            sync_tensorboard=True,
-            config=vars(args),
-            name=run_name,
-            monitor_gym=True,
-            save_code=True,
-        )
-    writer = SummaryWriter(f"runs/{run_name}")
-    writer.add_text(
-        "hyperparameters",
-        "|param|value|\n|-|-|\n%s"
-        % (
-            "\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])
-        ),
-    )
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -275,18 +248,10 @@ if __name__ == "__main__":
             next_obs, next_done = torch.Tensor(next_obs).to(
                 device
             ), torch.Tensor(next_done).to(device)
+
             ep_rew += reward[0]
             if next_done[0] != 0:
-                print(next_done)
-                print(next_done[0] == True)
-                print(ep_rew)
-                logger.record_stat(
-                    "return", ep_rew, episode=global_step, step=global_step
-                )
-                ep_rew = 0
-
-            if next_done[0]:
-                logger.record_stat("return", ep_rew, global_step)
+                logger.record_stat("return", ep_rew, step=global_step)
                 ep_rew = 0
 
             if "final_info" in infos:
@@ -298,18 +263,7 @@ if __name__ == "__main__":
                         logger.record_stat(
                             "episodic_return",
                             info["episode"]["r"],
-                            episode=global_step,
                             step=global_step,
-                        )
-                        writer.add_scalar(
-                            "charts/episodic_return",
-                            info["episode"]["r"],
-                            global_step,
-                        )
-                        writer.add_scalar(
-                            "charts/episodic_length",
-                            info["episode"]["l"],
-                            global_step,
                         )
 
         # bootstrap value if not done
@@ -426,15 +380,10 @@ if __name__ == "__main__":
         logger.record_stat(
             "learning_rate",
             optimizer.param_groups[0]["lr"],
-            episode=global_step,
             step=global_step,
         )
-        logger.record_stat(
-            "value_loss", v_loss.item(), episode=global_step, step=global_step
-        )
-        logger.record_stat(
-            "policy_loss", pg_loss.item(), episode=global_step, step=global_step
-        )
+        logger.record_stat("value_loss", v_loss.item(), step=global_step)
+        logger.record_stat("policy_loss", pg_loss.item(), step=global_step)
         logger.record_stat(
             "entropy",
             entropy_loss.item(),
@@ -445,9 +394,7 @@ if __name__ == "__main__":
             old_approx_kl.item(),
             step=global_step,
         )
-        logger.record_stat(
-            "approx_kl", approx_kl.item(), episode=global_step, step=global_step
-        )
+        logger.record_stat("approx_kl", approx_kl.item(), step=global_step)
         logger.record_stat(
             "clipfrac",
             np.mean(clipfracs),
@@ -461,7 +408,7 @@ if __name__ == "__main__":
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
         print(f"model saved to {model_path}")
-        from cleanrl_utils.evals.ppo_eval import evaluate
+        from ppo_eval import evaluate
 
         episodic_returns = evaluate(
             model_path,
@@ -476,22 +423,6 @@ if __name__ == "__main__":
         for idx, episodic_return in enumerate(episodic_returns):
             logger.record_stat(
                 "eval/episodic_return", episodic_return, episode=idx, step=idx
-            )
-
-        if args.upload_model:
-            from cleanrl_utils.huggingface import push_to_hub
-
-            repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
-            repo_id = (
-                f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
-            )
-            push_to_hub(
-                args,
-                episodic_returns,
-                repo_id,
-                "PPO",
-                f"runs/{run_name}",
-                f"videos/{run_name}-eval",
             )
 
     envs.close()
