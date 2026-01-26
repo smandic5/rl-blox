@@ -1,12 +1,8 @@
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
-import time
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
-from args import Args
 from ppo_loss import calculate_loss
 from storage import DataHolder, RunData
 
