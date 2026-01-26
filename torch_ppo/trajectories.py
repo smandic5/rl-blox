@@ -23,7 +23,6 @@ def collect_trajectories(
     global_step: int,
     logger: LoggerBase = None,
 ) -> tuple[int, np.ndarray, np.ndarray]:
-    ep_rew = 0
     for step in range(0, args.num_steps):
         global_step += args.num_envs
         obs[step] = next_obs
@@ -46,10 +45,7 @@ def collect_trajectories(
             next_done
         ).to(device)
 
-        ep_rew += reward[0]
         if infos and "episode" in infos:
-            logger.record_stat("return", ep_rew, step=global_step)
-            ep_rew = 0
             print(
                 f"global_step={global_step}, episodic_return={infos['episode']['r']}"
             )
