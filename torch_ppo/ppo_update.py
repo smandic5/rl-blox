@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
+from differentiable_sgd import DifferentiableSGD
 from ppo_loss import calculate_loss
 from storage import DataHolder, RunData
 
@@ -11,7 +12,7 @@ from rl_blox.logging.logger import LoggerBase
 
 def update_agent(
     agent: Agent,
-    optimizer: optim.Optimizer,
+    optimizer: DifferentiableSGD,
     data_holder: DataHolder,
     logger: LoggerBase,
     run_data: RunData,
@@ -63,9 +64,9 @@ def update_agent(
             break
 
     log_loss(
-        optimizer,
         logger,
-        run_data,
+        run_data.global_step,
+        optimizer.lr,
         clipfracs,
         b_values,
         b_returns,
@@ -80,9 +81,9 @@ def update_agent(
 
 
 def log_loss(
-    optimizer: optim.Optimizer,
     logger: LoggerBase,
     global_step: int,
+    lr: float,
     clipfracs: float,
     b_values: torch.Tensor,
     b_returns: torch.Tensor,
@@ -100,7 +101,7 @@ def log_loss(
 
     logger.record_stat(
         "learning_rate",
-        optimizer.param_groups[0]["lr"],
+        lr,
         step=global_step,
     )
     logger.record_stat("value_loss", v_loss.item(), step=global_step)

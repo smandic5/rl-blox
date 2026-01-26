@@ -30,6 +30,7 @@ class DifferentiableSGD:
     def step(self):
         """Take an optimization step."""
         memo = set()
+        print("steping")
 
         def update(module: nn.Module):
             for child in module.children():
@@ -44,6 +45,8 @@ class DifferentiableSGD:
                     if param.grad is None:
                         continue
 
+                    print(param.grad)
+
                     # Original SGD uses param.grad.data
                     new_param = param.add(param.grad, alpha=-self.lr)
 
@@ -57,8 +60,11 @@ class DifferentiableSGD:
 
         update(self.module)
 
-    def zero_grad(self):
+    def zero_grad(self, set_to_none: bool = True):
         """Sets gradients of all model parameters to zero."""
+        if set_to_none:
+            self.set_grads_none()
+            return
         for param in self.module.parameters():
             if param.grad is not None:
                 param.grad.detach_()

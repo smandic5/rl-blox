@@ -3,14 +3,13 @@ import os
 import random
 import time
 
-import gymnasium as gym
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import tyro
 from agent import Agent
 from args import Args
+from differentiable_sgd import DifferentiableSGD
 from env_handling import init_envs, make_env
 from gae import calc_gae
 from ppo_eval import evaluate
@@ -65,10 +64,10 @@ def evaluate_model(
         )
 
 
-def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
+def lr_annealing(args: Args, optimizer: DifferentiableSGD, iteration: int):
     frac = 1.0 - (iteration - 1.0) / args.num_iterations
     lrnow = frac * args.learning_rate
-    optimizer.param_groups[0]["lr"] = lrnow
+    optimizer.lr = lrnow
 
 
 if __name__ == "__main__":
@@ -94,6 +93,8 @@ if __name__ == "__main__":
     envs = init_envs(args, run_name)
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    optim.SGD()
+    optimizer = DifferentiableSGD(agent, args.learning_rate)
     data_holder = DataHolder(envs, args, device)
     run_data = RunData(envs, args, device)
 
