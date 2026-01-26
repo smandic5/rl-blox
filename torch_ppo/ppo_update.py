@@ -7,84 +7,10 @@ import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
 from args import Args
+from ppo_loss import calculate_loss
 from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
-
-
-def calculate_loss(
-    agent: Agent,
-    b_obs: torch.Tensor,
-    b_logprobs: torch.Tensor,
-    b_actions: torch.Tensor,
-    b_advantages: torch.Tensor,
-    b_returns: torch.Tensor,
-    b_values: torch.Tensor,
-    args: Args,
-    clipfracs: list,
-) -> tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
-    _, newlogprob, entropy, newvalue = agent.get_action_and_value(
-        b_obs, b_actions
-    )
-    logratio = newlogprob - b_logprobs
-    ratio = logratio.exp()
-
-    with torch.no_grad():
-        # calculate approx_kl http://joschu.net/blog/kl-approx.html
-        old_approx_kl = (-logratio).mean()
-        approx_kl = ((ratio - 1) - logratio).mean()
-        clipfracs += [
-            ((ratio - 1.0).abs() > args.clip_coef).float().mean().item()
-        ]
-
-    mb_advantages = b_advantages
-    if args.norm_adv:
-        mb_advantages = (mb_advantages - mb_advantages.mean()) / (
-            mb_advantages.std() + 1e-8
-        )
-
-    # Policy loss
-    pg_loss1 = -mb_advantages * ratio
-    pg_loss2 = -mb_advantages * torch.clamp(
-        ratio, 1 - args.clip_coef, 1 + args.clip_coef
-    )
-    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-    # Value loss
-    newvalue = newvalue.view(-1)
-    if args.clip_vloss:
-        v_loss_unclipped = (newvalue - b_returns) ** 2
-        v_clipped = b_values + torch.clamp(
-            newvalue - b_values,
-            -args.clip_coef,
-            args.clip_coef,
-        )
-        v_loss_clipped = (v_clipped - b_returns) ** 2
-        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-        v_loss = 0.5 * v_loss_max.mean()
-    else:
-        v_loss = 0.5 * ((newvalue - b_returns) ** 2).mean()
-
-    entropy_loss = entropy.mean()
-    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
-
-    return (
-        loss,
-        pg_loss,
-        v_loss,
-        entropy_loss,
-        clipfracs,
-        old_approx_kl,
-        approx_kl,
-    )
 
 
 def update_agent(
@@ -140,13 +66,42 @@ def update_agent(
         if args.target_kl is not None and approx_kl > args.target_kl:
             break
 
+    log_loss(
+        optimizer,
+        logger,
+        run_data,
+        clipfracs,
+        b_values,
+        b_returns,
+        pg_loss,
+        v_loss,
+        entropy_loss,
+        old_approx_kl,
+        approx_kl,
+    )
+
+    return clipfracs, old_approx_kl, approx_kl, pg_loss, v_loss, entropy_loss
+
+
+def log_loss(
+    optimizer: optim.Optimizer,
+    logger: LoggerBase,
+    global_step: int,
+    clipfracs: float,
+    b_values: torch.Tensor,
+    b_returns: torch.Tensor,
+    pg_loss: float,
+    v_loss: float,
+    entropy_loss: float,
+    old_approx_kl: float,
+    approx_kl: float,
+):
     y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
     var_y = np.var(y_true)
     explained_var = (
         np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
     )
 
-    global_step = run_data.global_step
     logger.record_stat(
         "learning_rate",
         optimizer.param_groups[0]["lr"],
@@ -171,5 +126,3 @@ def update_agent(
         step=global_step,
     )
     logger.record_stat("explained_variance", explained_var, step=global_step)
-
-    return clipfracs, old_approx_kl, approx_kl, pg_loss, v_loss, entropy_loss
