@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from agent import Agent
 from args import Args
+from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
 
@@ -10,37 +11,31 @@ from rl_blox.logging.logger import LoggerBase
 def collect_trajectories(
     envs: gym.vector.SyncVectorEnv,
     agent: Agent,
-    obs: torch.Tensor,
-    actions: torch.Tensor,
-    logprobs: torch.Tensor,
-    rewards: torch.Tensor,
-    dones: torch.Tensor,
-    values: torch.Tensor,
-    next_obs: torch.Tensor,
-    next_done: torch.Tensor,
-    args: Args,
-    device: torch.device,
-    global_step: int,
+    data_holder: DataHolder,
+    run_data: RunData,
     logger: LoggerBase = None,
-) -> tuple[int, np.ndarray, np.ndarray]:
-    for step in range(0, args.num_steps):
-        global_step += args.num_envs
-        obs[step] = next_obs
-        dones[step] = next_done
+) -> tuple[DataHolder, RunData]:
+    device = data_holder.device
+    next_obs, next_done = run_data.next_obs, run_data.next_done
+    global_step = run_data.global_step
+    for step in range(0, data_holder.args.num_steps):
+        global_step += data_holder.args.num_envs
+        data_holder.obs[step] = next_obs
+        data_holder.dones[step] = next_done
 
-        # ALGO LOGIC: action logic
+        # action logic
         with torch.no_grad():
             action, logprob, _, value = agent.get_action_and_value(next_obs)
-            values[step] = value.flatten()
-        actions[step] = action
-        logprobs[step] = logprob
+            data_holder.values[step] = value.flatten()
+        data_holder.actions[step] = action
+        data_holder.logprobs[step] = logprob
 
-        # TRY NOT TO MODIFY: execute the game and log data.
+        # execute the game and log data.
         next_obs, reward, terminations, truncations, infos = envs.step(
             action.cpu().numpy()
         )
+        data_holder.rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_done = np.logical_or(terminations, truncations)
-        rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(
             next_done
         ).to(device)
@@ -55,4 +50,6 @@ def collect_trajectories(
                 step=global_step,
             )
 
-    return global_step, next_obs, next_done
+    run_data.update(global_step, next_obs, next_done)
+
+    return data_holder, run_data

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
 from args import Args
+from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
 
@@ -89,18 +90,22 @@ def calculate_loss(
 def update_agent(
     agent: Agent,
     optimizer: optim.Optimizer,
-    b_obs: torch.Tensor,
-    b_logprobs: torch.Tensor,
-    b_actions: torch.Tensor,
-    b_advantages: torch.Tensor,
-    b_returns: torch.Tensor,
-    b_values: torch.Tensor,
-    args: Args,
+    data_holder: DataHolder,
     logger: LoggerBase,
-    global_step: int,
+    run_data: RunData,
 ):
-    b_inds = np.arange(args.batch_size)
+    args = data_holder.args
     clipfracs = []
+    b_inds = np.arange(args.batch_size)
+    (
+        b_obs,
+        b_actions,
+        b_logprobs,
+        b_values,
+        b_advantages,
+        b_returns,
+    ) = data_holder.get_batch(agent, run_data)
+
     for epoch in range(args.update_epochs):
         np.random.shuffle(b_inds)
         for start in range(0, args.batch_size, args.minibatch_size):
@@ -141,6 +146,7 @@ def update_agent(
         np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
     )
 
+    global_step = run_data.global_step
     logger.record_stat(
         "learning_rate",
         optimizer.param_groups[0]["lr"],

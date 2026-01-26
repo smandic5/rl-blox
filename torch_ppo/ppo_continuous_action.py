@@ -15,7 +15,7 @@ from env_handling import init_envs, make_env
 from gae import calc_gae
 from ppo_eval import evaluate
 from ppo_update import update_agent
-from storage import init_storage
+from storage import DataHolder, RunData
 from trajectories import collect_trajectories
 
 from rl_blox.logging.logger import (
@@ -94,71 +94,28 @@ if __name__ == "__main__":
     envs = init_envs(args, run_name)
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
-    obs, actions, logprobs, rewards, dones, values = init_storage(
-        envs, args, device
-    )
+    data_holder = DataHolder(envs, args, device)
+    run_data = RunData(envs, args, device)
 
-    # TRY NOT TO MODIFY: start the game
-    global_step = 0
-    next_obs, _ = envs.reset(seed=args.seed)
-    next_obs = torch.Tensor(next_obs).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
-
+    # start the game
     for iteration in range(1, args.num_iterations + 1):
-        # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             lr_annealing(args, optimizer, iteration)
 
-        global_step, next_obs, next_done = collect_trajectories(
+        collect_trajectories(
             envs,
             agent,
-            obs,
-            actions,
-            logprobs,
-            rewards,
-            dones,
-            values,
-            next_obs,
-            next_done,
-            args,
-            device,
-            global_step,
+            data_holder,
+            run_data,
             logger,
         )
 
-        # bootstrap value if not doner
-        advantages, returns = calc_gae(
-            agent,
-            rewards,
-            dones,
-            values,
-            next_obs,
-            next_done,
-            args,
-            device,
-        )
-
-        # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
-
-        # Optimizing the policy and value network
         update_agent(
             agent,
             optimizer,
-            b_obs,
-            b_logprobs,
-            b_actions,
-            b_advantages,
-            b_returns,
-            b_values,
-            args,
+            data_holder,
             logger,
-            global_step,
+            run_data,
         )
 
     if args.save_model:
