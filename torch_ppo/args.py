@@ -20,6 +20,7 @@ class Args:
     """whether to upload the saved model to huggingface"""
     hf_entity: str = ""
     """the user or org name of the model repository from the Hugging Face Hub"""
+    exp_name: str = "PpoStandalone"
 
     # Algorithm specific arguments
     env_id: str = "HalfCheetah-v4"

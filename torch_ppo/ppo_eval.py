@@ -12,7 +12,7 @@ def evaluate(
     run_name: str,
     Model: torch.nn.Module,
     device: torch.device = torch.device("cpu"),
-    capture_video: bool = True,
+    capture_video: bool = False,
     gamma: float = 0.99,
 ):
     envs = gym.vector.SyncVectorEnv(
@@ -24,11 +24,21 @@ def evaluate(
 
     obs, _ = envs.reset()
     episodic_returns = []
+    ep_rew = 0
+    ep_i = 0
     while len(episodic_returns) < eval_episodes:
         actions, _, _, _ = agent.get_action_and_value(
             torch.Tensor(obs).to(device)
         )
-        next_obs, _, _, _, infos = envs.step(actions.cpu().numpy())
+        next_obs, reward, terminations, truncations, infos = envs.step(
+            actions.cpu().numpy()
+        )
+        dones = terminations or truncations
+        ep_rew += reward[0]
+        if dones[0] != 0:
+            print(f"episode={ep_i}, episodic_return={ep_rew}")
+            ep_rew = 0
+            ep_i += 1
         if "final_info" in infos:
             for info in infos["final_info"]:
                 if "episode" not in info:
