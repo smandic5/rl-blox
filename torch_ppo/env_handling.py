@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+from args import Args
 
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
@@ -25,3 +26,18 @@ def make_env(env_id, idx, capture_video, run_name, gamma):
         return env
 
     return thunk
+
+
+def init_envs(args: Args, run_name: str) -> gym.vector.SyncVectorEnv:
+    # env setup
+    envs = gym.vector.SyncVectorEnv(
+        [
+            make_env(args.env_id, i, args.capture_video, run_name, args.gamma)
+            for i in range(args.num_envs)
+        ]
+    )
+    assert isinstance(
+        envs.single_action_space, gym.spaces.Box
+    ), "only continuous action space is supported"
+
+    return envs

@@ -11,7 +11,11 @@ import torch.optim as optim
 import tyro
 from agent import Agent
 from args import Args
-from env_handling import make_env
+from env_handling import init_envs, make_env
+from gae import calc_gae
+from ppo_update import update_agent
+from storage import init_storage
+from trajectories import collect_trajectories
 
 from rl_blox.logging.logger import (
     AIMLogger,
@@ -21,328 +25,12 @@ from rl_blox.logging.logger import (
 )
 
 
-def init_seeds(seed: int, deterministic_torch: bool = True):
+def init_seeds(args: Args):
     # TRY NOT TO MODIFY: seeding
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = deterministic_torch
-
-
-def init_envs(
-    env_id, capture_video, run_name, gamma, num_envs
-) -> gym.vector.SyncVectorEnv:
-    # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [
-            make_env(env_id, i, capture_video, run_name, gamma)
-            for i in range(num_envs)
-        ]
-    )
-    assert isinstance(
-        envs.single_action_space, gym.spaces.Box
-    ), "only continuous action space is supported"
-
-    return envs
-
-
-def init_storage(
-    envs: gym.vector.SyncVectorEnv,
-    args: Args,
-    device: torch.device,
-) -> tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
-    obs = torch.zeros(
-        (args.num_steps, args.num_envs) + envs.single_observation_space.shape
-    ).to(device)
-    actions = torch.zeros(
-        (args.num_steps, args.num_envs) + envs.single_action_space.shape
-    ).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    return obs, actions, logprobs, rewards, dones, values
-
-
-def collect_trajectories(
-    envs: gym.vector.SyncVectorEnv,
-    agent: Agent,
-    obs: torch.Tensor,
-    actions: torch.Tensor,
-    logprobs: torch.Tensor,
-    rewards: torch.Tensor,
-    dones: torch.Tensor,
-    values: torch.Tensor,
-    next_obs: torch.Tensor,
-    next_done: torch.Tensor,
-    args: Args,
-    device: torch.device,
-    global_step: int,
-    logger: LoggerBase = None,
-) -> tuple[int, np.ndarray, np.ndarray]:
-    ep_rew = 0
-    for step in range(0, args.num_steps):
-        global_step += args.num_envs
-        obs[step] = next_obs
-        dones[step] = next_done
-
-        # ALGO LOGIC: action logic
-        with torch.no_grad():
-            action, logprob, _, value = agent.get_action_and_value(next_obs)
-            values[step] = value.flatten()
-        actions[step] = action
-        logprobs[step] = logprob
-
-        # TRY NOT TO MODIFY: execute the game and log data.
-        next_obs, reward, terminations, truncations, infos = envs.step(
-            action.cpu().numpy()
-        )
-        next_done = np.logical_or(terminations, truncations)
-        rewards[step] = torch.tensor(reward).to(device).view(-1)
-        next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(
-            next_done
-        ).to(device)
-
-        ep_rew += reward[0]
-        if next_done[0] != 0:
-            logger.record_stat("return", ep_rew, step=global_step)
-            ep_rew = 0
-
-        if "final_info" in infos:
-            for info in infos["final_info"]:
-                if info and "episode" in info:
-                    print(
-                        f"global_step={global_step}, episodic_return={info['episode']['r']}"
-                    )
-                    logger.record_stat(
-                        "episodic_return",
-                        info["episode"]["r"],
-                        step=global_step,
-                    )
-
-    return global_step, next_obs, next_done
-
-
-def calc_gae(
-    agent: Agent,
-    rewards: torch.Tensor,
-    dones: torch.Tensor,
-    values: torch.Tensor,
-    next_obs: torch.Tensor,
-    next_done: torch.Tensor,
-    args: Args,
-    device: torch.device,
-):
-    with torch.no_grad():
-        next_value = agent.get_value(next_obs).reshape(1, -1)
-        advantages = torch.zeros_like(rewards).to(device)
-        lastgaelam = 0
-        for t in reversed(range(args.num_steps)):
-            if t == args.num_steps - 1:
-                nextnonterminal = 1.0 - next_done
-                nextvalues = next_value
-            else:
-                nextnonterminal = 1.0 - dones[t + 1]
-                nextvalues = values[t + 1]
-            delta = (
-                rewards[t]
-                + args.gamma * nextvalues * nextnonterminal
-                - values[t]
-            )
-            advantages[t] = lastgaelam = (
-                delta
-                + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
-            )
-        returns = advantages + values
-    return advantages, returns
-
-
-def calculate_loss(
-    agent: Agent,
-    b_obs: torch.Tensor,
-    b_logprobs: torch.Tensor,
-    b_actions: torch.Tensor,
-    b_advantages: torch.Tensor,
-    b_returns: torch.Tensor,
-    b_values: torch.Tensor,
-    args: Args,
-    mb_inds: np.ndarray,
-    clipfracs: list,
-) -> tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
-    _, newlogprob, entropy, newvalue = agent.get_action_and_value(
-        b_obs[mb_inds], b_actions[mb_inds]
-    )
-    logratio = newlogprob - b_logprobs[mb_inds]
-    ratio = logratio.exp()
-
-    with torch.no_grad():
-        # calculate approx_kl http://joschu.net/blog/kl-approx.html
-        old_approx_kl = (-logratio).mean()
-        approx_kl = ((ratio - 1) - logratio).mean()
-        clipfracs += [
-            ((ratio - 1.0).abs() > args.clip_coef).float().mean().item()
-        ]
-
-    mb_advantages = b_advantages[mb_inds]
-    if args.norm_adv:
-        mb_advantages = (mb_advantages - mb_advantages.mean()) / (
-            mb_advantages.std() + 1e-8
-        )
-
-    # Policy loss
-    pg_loss1 = -mb_advantages * ratio
-    pg_loss2 = -mb_advantages * torch.clamp(
-        ratio, 1 - args.clip_coef, 1 + args.clip_coef
-    )
-    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-    # Value loss
-    newvalue = newvalue.view(-1)
-    if args.clip_vloss:
-        v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-        v_clipped = b_values[mb_inds] + torch.clamp(
-            newvalue - b_values[mb_inds],
-            -args.clip_coef,
-            args.clip_coef,
-        )
-        v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
-        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-        v_loss = 0.5 * v_loss_max.mean()
-    else:
-        v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
-
-    entropy_loss = entropy.mean()
-    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
-
-    return (
-        loss,
-        pg_loss,
-        v_loss,
-        entropy_loss,
-        clipfracs,
-        old_approx_kl,
-        approx_kl,
-    )
-
-
-def update_agent(
-    agent: Agent,
-    optimizer: optim.Optimizer,
-    b_obs: torch.Tensor,
-    b_logprobs: torch.Tensor,
-    b_actions: torch.Tensor,
-    b_advantages: torch.Tensor,
-    b_returns: torch.Tensor,
-    b_values: torch.Tensor,
-    args: Args,
-):
-    b_inds = np.arange(args.batch_size)
-    clipfracs = []
-    for epoch in range(args.update_epochs):
-        np.random.shuffle(b_inds)
-        for start in range(0, args.batch_size, args.minibatch_size):
-            end = start + args.minibatch_size
-            mb_inds = b_inds[start:end]
-
-            (
-                loss,
-                pg_loss,
-                v_loss,
-                entropy_loss,
-                clipfracs,
-                old_approx_kl,
-                approx_kl,
-            ) = calculate_loss(
-                agent,
-                b_obs,
-                b_logprobs,
-                b_actions,
-                b_advantages,
-                b_returns,
-                b_values,
-                args,
-                mb_inds,
-                clipfracs,
-            )
-
-            optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-            optimizer.step()
-
-        if args.target_kl is not None and approx_kl > args.target_kl:
-            break
-
-    y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-    var_y = np.var(y_true)
-    explained_var = (
-        np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-    )
-
-    log_training(
-        optimizer,
-        clipfracs,
-        pg_loss,
-        v_loss,
-        entropy_loss,
-        old_approx_kl,
-        approx_kl,
-        explained_var,
-    )
-
-    return clipfracs, old_approx_kl, approx_kl, pg_loss, v_loss, entropy_loss
-
-
-def log_training(
-    optimizer,
-    clipfracs,
-    pg_loss,
-    v_loss,
-    entropy_loss,
-    old_approx_kl,
-    approx_kl,
-    explained_var,
-):
-    print("SPS:", int(global_step / (time.time() - start_time)))
-    logger.record_stat(
-        "learning_rate",
-        optimizer.param_groups[0]["lr"],
-        step=global_step,
-    )
-    logger.record_stat("value_loss", v_loss.item(), step=global_step)
-    logger.record_stat("policy_loss", pg_loss.item(), step=global_step)
-    logger.record_stat(
-        "entropy",
-        entropy_loss.item(),
-        step=global_step,
-    )
-    logger.record_stat(
-        "old_approx_kl",
-        old_approx_kl.item(),
-        step=global_step,
-    )
-    logger.record_stat("approx_kl", approx_kl.item(), step=global_step)
-    logger.record_stat(
-        "clipfrac",
-        np.mean(clipfracs),
-        step=global_step,
-    )
-    logger.record_stat("explained_variance", explained_var, step=global_step)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = args.torch_deterministic
 
 
 if __name__ == "__main__":
@@ -361,13 +49,11 @@ if __name__ == "__main__":
     )
     logger.start_new_episode()
 
-    init_seeds(args.seed, args.torch_deterministic)
+    init_seeds(args)
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
-    envs = init_envs(
-        args.env_id, args.capture_video, run_name, args.gamma, args.num_envs
-    )
+    envs = init_envs(args, run_name)
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     obs, actions, logprobs, rewards, dones, values = init_storage(
@@ -376,7 +62,6 @@ if __name__ == "__main__":
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
-    start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -426,18 +111,18 @@ if __name__ == "__main__":
         b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
-        clipfracs, old_approx_kl, approx_kl, pg_loss, v_loss, entropy_loss = (
-            update_agent(
-                agent,
-                optimizer,
-                b_obs,
-                b_logprobs,
-                b_actions,
-                b_advantages,
-                b_returns,
-                b_values,
-                args,
-            )
+        update_agent(
+            agent,
+            optimizer,
+            b_obs,
+            b_logprobs,
+            b_actions,
+            b_advantages,
+            b_returns,
+            b_values,
+            args,
+            logger,
+            global_step,
         )
 
     if args.save_model:
