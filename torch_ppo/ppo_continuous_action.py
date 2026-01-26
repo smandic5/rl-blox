@@ -13,6 +13,7 @@ from agent import Agent
 from args import Args
 from env_handling import init_envs, make_env
 from gae import calc_gae
+from ppo_eval import evaluate
 from ppo_update import update_agent
 from storage import init_storage
 from trajectories import collect_trajectories
@@ -31,6 +32,43 @@ def init_seeds(args: Args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
+
+
+def save_model(args: Args, run_name: str, agent: Agent):
+    model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    torch.save(agent.state_dict(), model_path)
+    print(f"model saved to {model_path}")
+    return model_path
+
+
+def evaluate_model(
+    args: Args,
+    run_name: str,
+    logger: LoggerBase,
+    device: torch.device,
+    model_path: str,
+):
+    episodic_returns = evaluate(
+        model_path,
+        make_env,
+        args.env_id,
+        eval_episodes=10,
+        run_name=f"{run_name}-eval",
+        Model=Agent,
+        device=device,
+        gamma=args.gamma,
+    )
+    for idx, episodic_return in enumerate(episodic_returns):
+        logger.record_stat(
+            "eval/episodic_return", episodic_return, episode=idx, step=idx
+        )
+
+
+def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
+    frac = 1.0 - (iteration - 1.0) / args.num_iterations
+    lrnow = frac * args.learning_rate
+    optimizer.param_groups[0]["lr"] = lrnow
 
 
 if __name__ == "__main__":
@@ -69,9 +107,7 @@ if __name__ == "__main__":
     for iteration in range(1, args.num_iterations + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
-            frac = 1.0 - (iteration - 1.0) / args.num_iterations
-            lrnow = frac * args.learning_rate
-            optimizer.param_groups[0]["lr"] = lrnow
+            lr_annealing(args, optimizer, iteration)
 
         global_step, next_obs, next_done = collect_trajectories(
             envs,
@@ -126,25 +162,7 @@ if __name__ == "__main__":
         )
 
     if args.save_model:
-        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        torch.save(agent.state_dict(), model_path)
-        print(f"model saved to {model_path}")
-        from ppo_eval import evaluate
-
-        episodic_returns = evaluate(
-            model_path,
-            make_env,
-            args.env_id,
-            eval_episodes=10,
-            run_name=f"{run_name}-eval",
-            Model=Agent,
-            device=device,
-            gamma=args.gamma,
-        )
-        for idx, episodic_return in enumerate(episodic_returns):
-            logger.record_stat(
-                "eval/episodic_return", episodic_return, episode=idx, step=idx
-            )
+        model_path = save_model(args, run_name, agent)
+        evaluate_model(args, run_name, logger, device, model_path)
 
     envs.close()
