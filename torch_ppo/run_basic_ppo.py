@@ -11,12 +11,9 @@ import tyro
 from agent import Agent
 from args import Args
 from env_handling import init_envs, make_env
-from gae import calc_gae
-from loss import Loss
 from ppo_eval import evaluate
-from ppo_update import update_agent
 from storage import DataHolder, RunData
-from trajectories import collect_trajectories
+from train_ppo import train_ppo
 
 from rl_blox.logging.logger import (
     AIMLogger,
@@ -63,45 +60,6 @@ def evaluate_model(
         logger.record_stat(
             "eval/episodic_return", episodic_return, episode=idx, step=idx
         )
-
-
-def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
-    frac = 1.0 - (iteration - 1.0) / args.num_iterations
-    lrnow = frac * args.learning_rate
-    optimizer.param_groups[0]["lr"] = lrnow
-
-
-def train_ppo(
-    agent: Agent,
-    envs: gym.vector.SyncVectorEnv,
-    optimizer: optim.Optimizer,
-    data_holder: DataHolder,
-    run_data: RunData = None,
-    logger: LoggerBase = None,
-) -> Loss:
-    args = data_holder.args
-    if run_data is None:
-        run_data = RunData(envs, args, data_holder.device)
-    for iteration in range(1, args.num_iterations + 1):
-        if args.anneal_lr:
-            lr_annealing(args, optimizer, iteration)
-
-        collect_trajectories(
-            envs,
-            agent,
-            data_holder,
-            run_data,
-            logger,
-        )
-
-        latest_loss = update_agent(
-            agent,
-            optimizer,
-            data_holder,
-            logger,
-            run_data,
-        )
-    return latest_loss
 
 
 if __name__ == "__main__":
