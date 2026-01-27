@@ -1,6 +1,7 @@
 import torch
 from agent import Agent
 from args import Args
+from loss import Loss
 
 
 def calculate_loss(
@@ -13,15 +14,7 @@ def calculate_loss(
     b_values: torch.Tensor,
     args: Args,
     clipfracs: list,
-) -> tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-]:
+) -> tuple[Loss, list]:
     _, newlogprob, entropy, newvalue = agent.get_action_and_value(
         b_obs, b_actions
     )
@@ -67,12 +60,7 @@ def calculate_loss(
     entropy_loss = entropy.mean()
     loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-    return (
-        loss,
-        pg_loss,
-        v_loss,
-        entropy_loss,
-        clipfracs,
-        old_approx_kl,
-        approx_kl,
+    loss_container = Loss(
+        loss, pg_loss, v_loss, entropy_loss, old_approx_kl, approx_kl
     )
+    return loss_container, clipfracs
