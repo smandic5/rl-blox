@@ -42,10 +42,12 @@ class Agent(nn.Module):
             torch.zeros(1, np.prod(envs.single_action_space.shape))
         )
 
-    def get_value(self, x):
+    def get_value(self, x: torch.Tensor) -> torch.Tensor:
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None):
+    def get_action_and_value(
+        self, x: torch.Tensor, action: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         action_mean = self.actor_mean(x)
         action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
