@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
 from loss import Loss
-from ppo_loss import calculate_loss
+from ppo_loss_calculator import calculate_loss
 from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
