@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
-from differentiable_sgd import DifferentiableSGD
 from ppo_loss import calculate_loss
 from storage import DataHolder, RunData
 
@@ -12,7 +11,7 @@ from rl_blox.logging.logger import LoggerBase
 
 def update_agent(
     agent: Agent,
-    optimizer: DifferentiableSGD,
+    optimizer: optim.Optimizer,
     data_holder: DataHolder,
     logger: LoggerBase,
     run_data: RunData,
@@ -66,7 +65,7 @@ def update_agent(
     log_loss(
         logger,
         run_data.global_step,
-        optimizer.lr,
+        optimizer.param_groups[0]["lr"],
         clipfracs,
         b_values,
         b_returns,
