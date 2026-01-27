@@ -3,6 +3,7 @@ import os
 import random
 import time
 
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.optim as optim
@@ -11,6 +12,7 @@ from agent import Agent
 from args import Args
 from env_handling import init_envs, make_env
 from gae import calc_gae
+from loss import Loss
 from ppo_eval import evaluate
 from ppo_update import update_agent
 from storage import DataHolder, RunData
@@ -69,6 +71,39 @@ def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
     optimizer.param_groups[0]["lr"] = lrnow
 
 
+def train_ppo(
+    agent: Agent,
+    envs: gym.vector.SyncVectorEnv,
+    optimizer: optim.Optimizer,
+    data_holder: DataHolder,
+    run_data: RunData = None,
+    logger: LoggerBase = None,
+) -> Loss:
+    args = data_holder.args
+    if run_data is None:
+        run_data = RunData(envs, args, data_holder.device)
+    for iteration in range(1, args.num_iterations + 1):
+        if args.anneal_lr:
+            lr_annealing(args, optimizer, iteration)
+
+        collect_trajectories(
+            envs,
+            agent,
+            data_holder,
+            run_data,
+            logger,
+        )
+
+        latest_loss = update_agent(
+            agent,
+            optimizer,
+            data_holder,
+            logger,
+            run_data,
+        )
+    return latest_loss
+
+
 if __name__ == "__main__":
     args = tyro.cli(Args)
     args.batch_size = int(args.num_envs * args.num_steps)
@@ -93,28 +128,8 @@ if __name__ == "__main__":
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     data_holder = DataHolder(envs, args, device)
-    run_data = RunData(envs, args, device)
 
-    # start the game
-    for iteration in range(1, args.num_iterations + 1):
-        if args.anneal_lr:
-            lr_annealing(args, optimizer, iteration)
-
-        collect_trajectories(
-            envs,
-            agent,
-            data_holder,
-            run_data,
-            logger,
-        )
-
-        update_agent(
-            agent,
-            optimizer,
-            data_holder,
-            logger,
-            run_data,
-        )
+    latest_loss = train_ppo(agent, envs, optimizer, data_holder, logger=logger)
 
     if args.save_model:
         model_path = save_model(args, run_name, agent)

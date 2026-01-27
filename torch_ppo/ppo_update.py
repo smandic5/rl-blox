@@ -10,13 +10,42 @@ from storage import DataHolder, RunData
 from rl_blox.logging.logger import LoggerBase
 
 
+def log_progress(
+    logger: LoggerBase,
+    global_step: int,
+    lr: float,
+    loss: Loss,
+    b_values: torch.Tensor,
+    b_returns: torch.Tensor,
+    clipfracs: list,
+):
+    y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
+    var_y = np.var(y_true)
+    explained_var = (
+        np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+    )
+
+    logger.record_stat(
+        "learning_rate",
+        lr,
+        step=global_step,
+    )
+    logger.record_stat("explained_variance", explained_var, step=global_step)
+    logger.record_stat(
+        "clipfrac",
+        np.mean(clipfracs),
+        step=global_step,
+    )
+    loss.print(logger, global_step)
+
+
 def update_agent(
     agent: Agent,
     optimizer: optim.Optimizer,
     data_holder: DataHolder,
     logger: LoggerBase,
     run_data: RunData,
-):
+) -> Loss:
     args = data_holder.args
     clipfracs = []
     b_inds = np.arange(args.batch_size)
@@ -65,33 +94,4 @@ def update_agent(
         clipfracs,
     )
 
-    return loss, clipfracs
-
-
-def log_progress(
-    logger: LoggerBase,
-    global_step: int,
-    lr: float,
-    loss: Loss,
-    b_values: torch.Tensor,
-    b_returns: torch.Tensor,
-    clipfracs: list,
-):
-    y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-    var_y = np.var(y_true)
-    explained_var = (
-        np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-    )
-
-    logger.record_stat(
-        "learning_rate",
-        lr,
-        step=global_step,
-    )
-    logger.record_stat("explained_variance", explained_var, step=global_step)
-    logger.record_stat(
-        "clipfrac",
-        np.mean(clipfracs),
-        step=global_step,
-    )
-    loss.print(logger, global_step)
+    return loss
