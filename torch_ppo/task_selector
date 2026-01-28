@@ -1,0 +1,61 @@
+import gymnasium as gym
+import higher
+import numpy as np
+import torch
+import torch.optim as optim
+
+from rl_blox.logging.logger import LoggerBase
+
+class TaskSelector:
+    def __init__(self, envs_set: list[gym.vector.SyncVectorEnv], **kwargs):
+        self.envs_set = envs_set
+        self.sampled_env: int = 0
+        self.waiting: bool = False
+
+    def sample(self, **kwargs):
+        if self.waiting:
+            raise Exception(f"Sampling env while waiting.")
+        self.waiting = True
+        return self.envs_set[self.sampled_env]
+
+    def feedback(self, **kwargs):
+        self.waiting = False
+
+
+class LoggingSelector(TaskSelector):
+    def __init__(self, envs_set, logger: LoggerBase, **kwargs):
+        super().__init__(envs_set, **kwargs)
+        self.logger = logger
+        self.stats_sample = dict()
+        self.stats_feedback = dict()
+
+    def sample(self, iteration: int = -1, **kwargs):
+        selected = super().sample(**kwargs)
+        self.logger.record_stat("Selected Env", self.sampled_env, step=iteration)
+        for k, v in self.stats_sample.keys():
+            self.logger.record_stat(k, v, step=iteration)
+        self.stats_sample.clear()
+        return selected
+
+    def feedback(self, iteration: int = -1, **kwargs):
+        super().feedback(**kwargs)
+        for k, v in self.stats_feedback.keys():
+            self.logger.record_stat(k, v, step=iteration)
+        self.stats_feedback.clear()
+
+
+class ProbabilitySelector(LoggingSelector):
+    def __init__(self, envs_set, weights: np.ndarray, **kwargs):
+        super().__init__(envs_set, **kwargs)
+        self.weights = weights
+
+    def sample(self, **kwargs):
+        for i, e in enumerate(self.weights):
+            self.stats_sample[f"Probability Env {i}"] = e
+        self.sampled_env = np.random.choice(len(self.envs_set), p=self.weights)
+        return super().sample(**kwargs)
+
+class UniformSelector(ProbabilitySelector):
+    def __init__(self, envs_set, **kwargs):
+        l = len(envs_set)
+        super().__init__(envs_set, np.ones(l) / l, **kwargs)
