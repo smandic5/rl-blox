@@ -22,6 +22,12 @@ class Args:
     """the user or org name of the model repository from the Hugging Face Hub"""
     exp_name: str = "PpoStandalone"
 
+    # Meta specific arguments
+    total_meta_iterations: int = 10000
+    meta_learning_rate: float = 3e-4
+    inner_learning_rate: float = 0.1
+    num_adaptation_steps: int = 1
+
     # Algorithm specific arguments
     env_id: str = "HalfCheetah-v5"
     """the id of the environment"""

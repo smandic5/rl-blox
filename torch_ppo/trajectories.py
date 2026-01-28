@@ -14,10 +14,11 @@ def collect_trajectories(
     data_holder: DataHolder,
     run_data: RunData,
     logger: LoggerBase = None,
-) -> tuple[DataHolder, RunData]:
+) -> tuple[DataHolder, RunData, list]:
     device = data_holder.device
     next_obs, next_done = run_data.next_obs, run_data.next_done
     global_step = run_data.global_step
+    rewards = []
     for step in range(0, data_holder.args.num_steps):
         global_step += data_holder.args.num_envs
         data_holder.obs[step] = next_obs
@@ -41,15 +42,16 @@ def collect_trajectories(
         ).to(device)
 
         if infos and "episode" in infos:
-            print(
-                f"global_step={global_step}, episodic_return={infos['episode']['r']}"
-            )
-            logger.record_stat(
-                "episodic_return",
-                infos["episode"]["r"],
-                step=global_step,
-            )
+            print_reward = infos["episode"]["r"][0]
+            print(f"global_step={global_step}, episodic_return={print_reward}")
+            if logger is not None:
+                logger.record_stat(
+                    "episodic_return",
+                    print_reward,
+                    step=global_step,
+                )
+            rewards.append(print_reward)
 
     run_data.update(global_step, next_obs, next_done)
 
-    return data_holder, run_data
+    return data_holder, run_data, rewards

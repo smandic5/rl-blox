@@ -45,6 +45,7 @@ def update_agent(
     data_holder: DataHolder,
     logger: LoggerBase,
     run_data: RunData,
+    is_inner_optimizer: bool,
 ) -> Loss:
     args = data_holder.args
     clipfracs = []
@@ -76,22 +77,26 @@ def update_agent(
                 clipfracs,
             )
 
-            optimizer.zero_grad()
-            loss.loss.backward()
-            nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-            optimizer.step()
+            if is_inner_optimizer:
+                optimizer.step(loss.loss)
+            else:
+                optimizer.zero_grad()
+                loss.loss.backward()
+                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                optimizer.step()
 
         if args.target_kl is not None and loss.approx_kl > args.target_kl:
             break
 
-    log_progress(
-        logger,
-        run_data.global_step,
-        optimizer.param_groups[0]["lr"],
-        loss,
-        b_values,
-        b_returns,
-        clipfracs,
-    )
+    if logger is not None:
+        log_progress(
+            logger,
+            run_data.global_step,
+            optimizer.param_groups[0]["lr"],
+            loss,
+            b_values,
+            b_returns,
+            clipfracs,
+        )
 
     return loss
