@@ -10,9 +10,10 @@ import torch.optim as optim
 import tyro
 from agent import Agent
 from args import Args
-from env_handling import init_envs, make_env
+from env_handling import init_envs, init_envs_set, make_env
 from ppo_eval import evaluate
 from storage import DataHolder, RunData
+from task_selector import UniformSelector
 from train_maml_ppo import train_maml_ppo
 from train_ppo import train_ppo
 
@@ -83,17 +84,19 @@ if __name__ == "__main__":
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
-    envs = init_envs(args, run_name)
-    agent = Agent(envs).to(device)
+    envs_set = init_envs_set(args, run_name)
+    selector = UniformSelector(envs_set, logger=logger)
+    agent = Agent(envs_set[0]).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
-    data_holder = DataHolder(envs, args, device)
+    data_holder = DataHolder(envs_set[0], args, device)
 
     latest_loss = train_maml_ppo(
-        agent, envs, optimizer, data_holder, logger=logger
+        agent, selector, optimizer, data_holder, logger=logger
     )
 
     if args.save_model:
         model_path = save_model(args, run_name, agent)
         evaluate_model(args, run_name, logger, device, model_path)
 
-    envs.close()
+    for e in envs_set:
+        e.close()

@@ -8,6 +8,7 @@ from args import Args
 from loss import Loss
 from ppo_update import update_agent
 from storage import DataHolder, RunData
+from task_selector import TaskSelector
 from train_ppo import train_ppo
 from trajectories import collect_trajectories
 
@@ -22,7 +23,7 @@ def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
 
 def train_maml_ppo(
     agent: Agent,
-    envs: gym.vector.SyncVectorEnv,
+    selector: TaskSelector,
     optimizer: optim.Optimizer,
     data_holder: DataHolder,
     logger: LoggerBase = None,
@@ -32,7 +33,7 @@ def train_maml_ppo(
         agent.parameters(), lr=args.inner_learning_rate
     )
     for iteration in range(args.total_meta_iterations):
-        envs = envs  # TODO sample
+        envs = selector.sample()
         optimizer.zero_grad()
         with higher.innerloop_ctx(
             agent, inner_optimizer, copy_initial_weights=False
@@ -56,4 +57,9 @@ def train_maml_ppo(
                     "Adapted_Reward", adapted_reward, step=iteration
                 )
             inner_loss.loss.backward()
+        selector.feedback(
+            to_log=dict(
+                adapting_reward=adapting_reward, adapted_reward=adapted_reward
+            )
+        )
         optimizer.step()

@@ -27,6 +27,7 @@ class Args:
     meta_learning_rate: float = 3e-4
     inner_learning_rate: float = 0.1
     num_adaptation_steps: int = 1
+    train_set_size: int = 10
 
     # Algorithm specific arguments
     env_id: str = "HalfCheetah-v5"
