@@ -84,19 +84,25 @@ if __name__ == "__main__":
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
-    envs_set = init_envs_set(args, run_name)
-    selector = UniformSelector(envs_set, logger=logger)
-    agent = Agent(envs_set[0]).to(device)
+    envs_train_set = init_envs_set(args, run_name)
+    envs_test_set = init_envs_set(args, run_name, is_test=True)
+    selector = UniformSelector(envs_train_set, logger=logger)
+    agent = Agent(envs_train_set[0]).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
-    data_holder = DataHolder(envs_set[0], args, device)
+    data_holder = DataHolder(envs_train_set[0], args, device)
 
     latest_loss = train_maml_ppo(
-        agent, selector, optimizer, data_holder, logger=logger
+        agent,
+        selector,
+        optimizer,
+        data_holder,
+        logger=logger,
+        test_set=envs_test_set,
     )
 
     if args.save_model:
         model_path = save_model(args, run_name, agent)
         evaluate_model(args, run_name, logger, device, model_path)
 
-    for e in envs_set:
+    for e in envs_train_set:
         e.close()

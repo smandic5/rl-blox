@@ -1,4 +1,5 @@
 import gymnasium as gym
+import numpy as np
 import torch.optim as optim
 from agent import Agent
 from args import Args
@@ -11,9 +12,23 @@ from trajectories import collect_trajectories
 from rl_blox.logging.logger import LoggerBase
 
 
-def lr_annealing(args: Args, optimizer: optim.Optimizer, iteration: int):
-    frac = 1.0 - (iteration - 1.0) / args.num_iterations
-    lrnow = frac * args.learning_rate
+def lr_annealing(
+    args: Args,
+    optimizer: optim.Optimizer,
+    iteration: int,
+    max_iterations: int,
+    uses_inner_lr: bool = False,
+):
+    if uses_inner_lr:
+        frac = 1.0 - np.clip(
+            (iteration - 1) / args.inner_learning_rate_anneal_steps, 0, 1
+        )
+        lrnow = args.inner_learning_rate * (
+            frac
+        ) + args.inner_learning_rate_goal * (1 - frac)
+    else:
+        frac = 1.0 - (iteration - 1.0) / max_iterations
+        lrnow = frac * args.learning_rate
     optimizer.param_groups[0]["lr"] = lrnow
 
 
@@ -26,6 +41,7 @@ def train_ppo(
     logger: LoggerBase = None,
     num_iteration: int = None,
     is_meta_backbone: bool = False,
+    uses_inner_lr: bool = False,
 ) -> tuple[Loss, list]:
     args = data_holder.args
     rewards = []
@@ -34,8 +50,12 @@ def train_ppo(
     if num_iteration is None:
         num_iteration = args.num_iterations
     for iteration in range(1, num_iteration + 1):
-        if args.anneal_lr:
-            lr_annealing(args, optimizer, iteration)
+        if (args.anneal_ppo_lr and not uses_inner_lr) or (
+            args.anneal_inner_lr and uses_inner_lr
+        ):
+            lr_annealing(
+                args, optimizer, iteration, num_iteration, uses_inner_lr
+            )
 
         _, _, iter_rewards = collect_trajectories(
             envs,
@@ -46,33 +66,14 @@ def train_ppo(
         )
         rewards.append(iter_rewards)
 
-        if is_meta_backbone and iteration == num_iteration:
-            (
-                b_obs,
-                b_actions,
-                b_logprobs,
-                b_values,
-                b_advantages,
-                b_returns,
-            ) = data_holder.get_batch(agent, run_data)
-            latest_loss, _ = calculate_loss(
-                agent,
-                b_obs,
-                b_logprobs,
-                b_actions,
-                b_advantages,
-                b_returns,
-                b_values,
-                args,
-                [],
-            )
-        else:
-            latest_loss = update_agent(
-                agent,
-                optimizer,
-                data_holder,
-                logger,
-                run_data,
-                is_meta_backbone,
-            )
+        latest_loss = update_agent(
+            agent,
+            optimizer,
+            data_holder,
+            logger,
+            run_data,
+            is_inner_optimizer=is_meta_backbone,
+            return_first_loss=is_meta_backbone and iteration == num_iteration,
+            use_full_batch=is_meta_backbone and iteration == num_iteration,
+        )
     return latest_loss, rewards

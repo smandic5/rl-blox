@@ -46,8 +46,14 @@ def update_agent(
     logger: LoggerBase,
     run_data: RunData,
     is_inner_optimizer: bool,
+    return_first_loss: bool = None,
+    use_full_batch: bool = None,
 ) -> Loss:
     args = data_holder.args
+    if return_first_loss is None:
+        return_first_loss = is_inner_optimizer
+    if use_full_batch is None:
+        use_full_batch = is_inner_optimizer
     clipfracs = []
     b_inds = np.arange(args.batch_size)
     (
@@ -63,7 +69,7 @@ def update_agent(
         np.random.shuffle(b_inds)
         for start in range(0, args.batch_size, args.minibatch_size):
             end = start + args.minibatch_size
-            mb_inds = b_inds[start:end]
+            mb_inds = b_inds[start:end] if not use_full_batch else b_inds
 
             loss, clipfracs = calculate_loss(
                 agent,
@@ -77,6 +83,9 @@ def update_agent(
                 clipfracs,
             )
 
+            if return_first_loss:
+                return loss
+
             if is_inner_optimizer:
                 optimizer.step(loss.loss)
             else:
@@ -85,8 +94,9 @@ def update_agent(
                 nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
                 optimizer.step()
 
-        if args.target_kl is not None and loss.approx_kl > args.target_kl:
-            break
+        if args.target_kl is not None:
+            if loss.approx_kl > args.target_kl:
+                break
 
     if logger is not None:
         log_progress(

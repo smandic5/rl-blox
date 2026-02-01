@@ -26,8 +26,14 @@ class Args:
     total_meta_iterations: int = 10000
     meta_learning_rate: float = 3e-4
     inner_learning_rate: float = 0.1
+    anneal_inner_lr: bool = True
+    inner_learning_rate_goal: float = 0.01
+    inner_learning_rate_anneal_steps: float = 1
     num_adaptation_steps: int = 1
     train_set_size: int = 10
+    test_set_size: int = 3
+    eval_freq: int = 50
+    eval_len: int = 15
 
     # Algorithm specific arguments
     env_id: str = "HalfCheetah-v5"
@@ -40,7 +46,7 @@ class Args:
     """the number of parallel game environments"""
     num_steps: int = 2048
     """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = True
+    anneal_ppo_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
     gamma: float = 0.99
     """the discount factor gamma"""

@@ -57,8 +57,12 @@ def init_envs(
     return envs
 
 
-def init_envs_set(args: Args, run_name: str) -> list[gym.vector.SyncVectorEnv]:
+def init_envs_set(
+    args: Args, run_name: str, is_test: bool = False
+) -> list[gym.vector.SyncVectorEnv]:
     return [
         init_envs(args, run_name, target_velocity)
-        for target_velocity in np.random.uniform(0, 2, args.train_set_size)
+        for target_velocity in np.random.uniform(
+            0, 2, args.test_set_size if is_test else args.train_set_size
+        )
     ]
