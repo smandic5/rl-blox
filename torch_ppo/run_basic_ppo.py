@@ -10,7 +10,7 @@ import torch.optim as optim
 import tyro
 from agent import Agent
 from args import Args
-from env_handling import init_envs, init_envs_set, make_env
+from envs.env_sets import init_env_sets
 from ppo_eval import evaluate
 from storage import DataHolder, RunData
 from train_ppo import train_ppo
@@ -82,7 +82,8 @@ if __name__ == "__main__":
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
-    envs = init_envs_set(args, run_name)[0]
+    train_set, test_set = init_env_sets(args, run_name)
+    envs = train_set[0]
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     data_holder = DataHolder(envs, args, device)

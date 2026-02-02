@@ -35,6 +35,10 @@ class Args:
     eval_freq: int = 50
     eval_len: int = 15
 
+    # Cheetah specific arguments
+    target_velocity_min: float = 1.5
+    target_velocity_max: float = 2.0
+
     # Algorithm specific arguments
     env_id: str = "HalfCheetah-v5"
     """the id of the environment"""

@@ -40,6 +40,7 @@ def train_maml_ppo(
         if iteration % args.eval_freq == 0 and test_set is not None:
             envs = run_eval(agent, data_holder, test_set, args, iteration)
 
+        print(f"Metal iteration: {iteration}")
         with higher.innerloop_ctx(
             agent, inner_optimizer, copy_initial_weights=False
         ) as (fast_agent, diff_opt):
@@ -115,5 +116,6 @@ def run_eval(
             logger.record_stat(
                 f"Adapted_Reward_T{test_env_i}", adapted_reward, step=iteration
             )
+        eval_logger.run.close()
     print("Evaluation ended.")
     return envs

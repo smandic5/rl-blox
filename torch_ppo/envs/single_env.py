@@ -1,6 +1,5 @@
 import gymnasium as gym
 import numpy as np
-from args import Args
 from cheetah_meta_wrapper import HalfCheetahMetaWrapper
 
 
@@ -31,38 +30,3 @@ def make_env(
         return env
 
     return thunk
-
-
-def init_envs(
-    args: Args, run_name: str, target_velocity: float = None
-) -> gym.vector.SyncVectorEnv:
-    # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [
-            make_env(
-                args.env_id,
-                i,
-                args.capture_video,
-                run_name,
-                args.gamma,
-                target_velocity,
-            )
-            for i in range(args.num_envs)
-        ]
-    )
-    assert isinstance(
-        envs.single_action_space, gym.spaces.Box
-    ), "only continuous action space is supported"
-
-    return envs
-
-
-def init_envs_set(
-    args: Args, run_name: str, is_test: bool = False
-) -> list[gym.vector.SyncVectorEnv]:
-    return [
-        init_envs(args, run_name, target_velocity)
-        for target_velocity in np.random.uniform(
-            0, 2, args.test_set_size if is_test else args.train_set_size
-        )
-    ]
