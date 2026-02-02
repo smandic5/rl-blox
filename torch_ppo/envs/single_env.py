@@ -1,6 +1,7 @@
 import gymnasium as gym
 import numpy as np
-from cheetah_meta_wrapper import HalfCheetahMetaWrapper
+
+from .cheetah_meta_wrapper import HalfCheetahMetaWrapper
 
 
 def make_env(
