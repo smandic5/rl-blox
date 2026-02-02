@@ -2,7 +2,8 @@ import gymnasium as gym
 import torch
 from agent import Agent
 from args import Args
-from gae import calc_gae
+
+from .gae import calc_gae
 
 
 class RunData:

@@ -3,11 +3,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
-from loss import Loss
-from ppo_loss_calculator import calculate_loss
-from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
+
+from .storage import DataHolder, RunData
+from .update.loss import Loss
+from .update.ppo_loss_calculator import calculate_loss
 
 
 def log_progress(
@@ -47,13 +48,10 @@ def update_agent(
     run_data: RunData,
     is_inner_optimizer: bool,
     return_first_loss: bool = None,
-    use_full_batch: bool = None,
 ) -> Loss:
     args = data_holder.args
     if return_first_loss is None:
         return_first_loss = is_inner_optimizer
-    if use_full_batch is None:
-        use_full_batch = is_inner_optimizer
     clipfracs = []
     b_inds = np.arange(args.batch_size)
     (
@@ -65,11 +63,25 @@ def update_agent(
         b_returns,
     ) = data_holder.get_batch(agent, run_data)
 
+    if return_first_loss:
+        loss, _ = calculate_loss(
+            agent,
+            b_obs,
+            b_logprobs,
+            b_actions,
+            b_advantages,
+            b_returns,
+            b_values,
+            args,
+            clipfracs,
+        )
+        return loss
+
     for epoch in range(args.update_epochs):
         np.random.shuffle(b_inds)
         for start in range(0, args.batch_size, args.minibatch_size):
             end = start + args.minibatch_size
-            mb_inds = b_inds[start:end] if not use_full_batch else b_inds
+            mb_inds = b_inds[start:end]
 
             loss, clipfracs = calculate_loss(
                 agent,
@@ -82,9 +94,6 @@ def update_agent(
                 args,
                 clipfracs,
             )
-
-            if return_first_loss:
-                return loss
 
             if is_inner_optimizer:
                 optimizer.step(loss.loss)

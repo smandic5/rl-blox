@@ -3,13 +3,14 @@ import numpy as np
 import torch.optim as optim
 from agent import Agent
 from args import Args
-from loss import Loss
-from ppo_loss_calculator import calculate_loss
-from ppo_update import update_agent
-from storage import DataHolder, RunData
-from trajectories import collect_trajectories
 
 from rl_blox.logging.logger import LoggerBase
+
+from .storage import DataHolder, RunData
+from .trajectories import collect_trajectories
+from .update.loss import Loss
+from .update.ppo_loss_calculator import calculate_loss
+from .update.ppo_update import update_agent
 
 
 def lr_annealing(

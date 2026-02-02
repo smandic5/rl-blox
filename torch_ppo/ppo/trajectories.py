@@ -3,9 +3,10 @@ import numpy as np
 import torch
 from agent import Agent
 from args import Args
-from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import LoggerBase
+
+from .storage import DataHolder, RunData
 
 
 def collect_trajectories(
