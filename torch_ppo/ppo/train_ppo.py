@@ -6,31 +6,11 @@ from args import Args
 
 from rl_blox.logging.logger import LoggerBase
 
+from .lr_handling import lr_annealing
+from .ppo_update import update_agent
 from .storage import DataHolder, RunData
 from .trajectories import collect_trajectories
 from .update.loss import Loss
-from .update.ppo_loss_calculator import calculate_loss
-from .update.ppo_update import update_agent
-
-
-def lr_annealing(
-    args: Args,
-    optimizer: optim.Optimizer,
-    iteration: int,
-    max_iterations: int,
-    uses_inner_lr: bool = False,
-):
-    if uses_inner_lr:
-        frac = 1.0 - np.clip(
-            (iteration - 1) / args.inner_learning_rate_anneal_steps, 0, 1
-        )
-        lrnow = args.inner_learning_rate * (
-            frac
-        ) + args.inner_learning_rate_goal * (1 - frac)
-    else:
-        frac = 1.0 - (iteration - 1.0) / max_iterations
-        lrnow = frac * args.learning_rate
-    optimizer.param_groups[0]["lr"] = lrnow
 
 
 def train_ppo(
