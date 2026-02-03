@@ -8,10 +8,9 @@ import tyro
 from agent import Agent
 from args import Args
 from envs.env_sets import init_env_sets
-from scipy.sparse import csr_array
-from scipy.sparse.csgraph import maximum_bipartite_matching
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
-from task_selectors.ins.higher_to_torch import copy_from_fast
+
+from .higher_to_torch import copy_from_fast
 
 
 def swap_rows(weights: torch.Tensor, m: int, n: int):
