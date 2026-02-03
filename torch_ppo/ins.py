@@ -8,35 +8,7 @@ import tyro
 from agent import Agent
 from args import Args
 from envs.env_sets import init_env_sets
-
-
-def _state_dict_from_fast(
-    module: torch.nn.Module, fmodule: higher.patch._MonkeyPatchBase
-):
-    state_dict = {}
-    fast_params = list(fmodule.fast_params)
-    idx = 0
-
-    for name, param in module.named_parameters():
-        print("-" * 100)
-        print(f"{name}: {param} \n {fast_params[idx]}")
-        state_dict[name] = fast_params[idx].detach().clone()
-        idx += 1
-
-    if idx != len(fast_params):
-        raise RuntimeError("Mismatch between fast params and module params")
-
-    return state_dict
-
-
-def copy_from_fast(
-    original_module: torch.nn.Module, fast_model: higher.patch._MonkeyPatchBase
-):
-    new_module = copy.deepcopy(original_module)
-    new_module.load_state_dict(
-        _state_dict_from_fast(new_module, fast_model), strict=True
-    )
-    return new_module
+from task_selectors.ins.higher_to_torch import copy_from_fast
 
 
 def swap_rows(weights: torch.Tensor, m: int, n: int):
@@ -110,12 +82,6 @@ if __name__ == "__main__":
         loss = torch.sum(1 - o)
         fopt.step(loss)
         agent_new = copy_from_fast(agent1, fmodel)
-        print("---")
-        print("---")
-        print("---")
-        print("---")
-        agent_new = copy_from_fast(agent_new, fmodel)
 
     agent2 = Agent(envs_train_set[0])
-
     print(compare_agents(agent_new, agent2))
