@@ -11,7 +11,7 @@ def fix_anneal(args: Args, iteration: int) -> float:
 
 
 def constant_anneal(args: Args, iteration: int, max_iterations: int) -> float:
-    frac = 1.0 - (iteration - 1.0) / max_iterations
+    frac = 1.0 - (iteration - 1.0) / (args.eval_len * 2)  # max_iterations
     return frac * args.learning_rate
 
 
@@ -23,7 +23,8 @@ def lr_annealing(
     uses_inner_lr: bool = False,
 ):
     if uses_inner_lr:
-        lrnow = fix_anneal(args, iteration)
+        # lrnow = fix_anneal(args, iteration)
+        lrnow = constant_anneal(args, iteration, max_iterations)
     else:
         lrnow = constant_anneal(args, iteration, max_iterations)
     optimizer.param_groups[0]["lr"] = lrnow

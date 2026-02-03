@@ -32,7 +32,7 @@ class Args:
     num_adaptation_steps: int = 1
     train_set_size: int = 10
     test_set_size: int = 3
-    eval_freq: int = 50
+    eval_freq: int = 100
     eval_len: int = 15
 
     # Cheetah specific arguments

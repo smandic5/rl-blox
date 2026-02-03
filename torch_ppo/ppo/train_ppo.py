@@ -55,6 +55,5 @@ def train_ppo(
             run_data,
             is_inner_optimizer=is_meta_backbone,
             return_first_loss=is_meta_backbone and iteration == num_iteration,
-            use_full_batch=is_meta_backbone and iteration == num_iteration,
         )
     return latest_loss, rewards

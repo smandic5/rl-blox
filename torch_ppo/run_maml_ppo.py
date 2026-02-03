@@ -11,11 +11,11 @@ import tyro
 from agent import Agent
 from args import Args
 from envs.env_sets import init_env_sets
-from ppo_eval import evaluate
-from storage import DataHolder, RunData
-from task_selector import UniformSelector
+from ppo.ppo_eval import evaluate
+from ppo.storage import DataHolder, RunData
+from ppo.train_ppo import train_ppo
+from task_selectors.task_selector import UniformSelector
 from train_maml_ppo import train_maml_ppo
-from train_ppo import train_ppo
 
 from rl_blox.logging.logger import (
     AIMLogger,

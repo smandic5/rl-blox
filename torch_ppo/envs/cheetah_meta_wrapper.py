@@ -13,6 +13,8 @@ class HalfCheetahMetaWrapper(gym.Wrapper):
         envs: HalfCheetahEnv = self.env
 
         observation, reward, terminated, truncated, info = envs.step(action)
+        # return observation, reward, terminated, truncated, info
+
         reward_ctrl = info["reward_ctrl"]
         x_velocity = info["x_velocity"]
         forward_reward = -1.0 * abs(x_velocity - self.target_velocity)
