@@ -1,10 +1,15 @@
 import gymnasium as gym
 import higher
 import numpy as np
+import scipy.special
 import torch
 import torch.optim as optim
+from agent import Agent
 
 from rl_blox.logging.logger import LoggerBase
+
+from .ins.higher_to_torch import copy_from_fast
+from .ins.ins import compare_agents
 
 
 class TaskSelector:
@@ -72,3 +77,59 @@ class UniformSelector(ProbabilitySelector):
     def __init__(self, envs_set, **kwargs):
         l = len(envs_set)
         super().__init__(envs_set, np.ones(l) / l, **kwargs)
+
+
+class MatrixProbabilitySelector(ProbabilitySelector):
+    def __init__(
+        self,
+        envs_set,
+        from_last: bool,
+        recalculate_on_feedback: bool,
+        cost_matrix: np.ndarray = None,
+        **kwargs,
+    ):
+        if cost_matrix is None:
+            l = len(envs_set)
+            cost_matrix = np.ones((l, l)) / l
+        assert cost_matrix.shape[0] == cost_matrix.shape[1]
+        self.cost_matrix = cost_matrix
+        self.from_last = from_last
+        self.recalculate_on_feedback = recalculate_on_feedback
+        super().__init__(envs_set, weights=self.recalculate_weights(), **kwargs)
+
+    def recalculate_weights(self) -> np.ndarray:
+        if self.from_last:
+            w = self.cost_matrix[self.sampled_env]
+        else:
+            w = np.mean(self.cost_matrix, axis=0)
+        w = np.clip(w, -10, 10)
+        w = scipy.special.softmax(w)
+        return w
+
+    def feedback(self, **kwargs):
+        if self.recalculate_on_feedback:
+            self.weights = self.recalculate_weights()
+        return super().feedback(**kwargs)
+
+
+class InsSelector(MatrixProbabilitySelector):
+    def __init__(self, envs_set, from_last, agents: list[Agent], **kwargs):
+        self.agents = agents
+        l = len(envs_set)
+        super().__init__(
+            envs_set, from_last, True, cost_matrix=np.zeros((l, l)), **kwargs
+        )
+
+    def feedback(self, used_model: higher.patch._MonkeyPatchBase, **kwargs):
+        module = copy_from_fast(Agent(self.envs_set[0]), used_model)
+        self.agents[self.sampled_env] = module
+        for i, agent in enumerate(self.agents):
+            if i == self.sampled_env:
+                continue
+            diff = -compare_agents(
+                agent, module
+            )  # TODO make negation a parameter
+            self.cost_matrix[self.sampled_env, i] = diff
+            self.cost_matrix[i, self.sampled_env] = diff
+
+        return super().feedback(**kwargs)

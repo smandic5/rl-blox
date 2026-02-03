@@ -34,8 +34,8 @@ def train_maml_ppo(
         envs = selector.sample()
         optimizer.zero_grad()
 
-        if iteration % args.eval_freq == 0 and test_set is not None:
-            envs = run_eval(agent, data_holder, test_set, args, iteration)
+        # f iteration % args.eval_freq == 0 and test_set is not None:
+        #    envs = run_eval(agent, data_holder, test_set, args, iteration)
 
         print(f"Metal iteration: {iteration}")
         with higher.innerloop_ctx(
@@ -61,12 +61,15 @@ def train_maml_ppo(
                     "Adapted_Reward", adapted_reward, step=iteration
                 )
             inner_loss.loss.backward()
-        selector.feedback(
-            to_log=dict(
-                adapting_reward=adapting_reward, adapted_reward=adapted_reward
+
+            selector.feedback(
+                to_log=dict(
+                    adapting_reward=adapting_reward,
+                    adapted_reward=adapted_reward,
+                ),
+                used_model=fast_agent,
             )
-        )
-        optimizer.step()
+            optimizer.step()
 
 
 def run_eval(

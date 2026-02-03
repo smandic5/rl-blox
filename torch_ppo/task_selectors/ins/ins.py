@@ -1,3 +1,4 @@
+import copy
 import random
 
 import higher
@@ -99,10 +100,11 @@ def compare_sequentials(
 def compare_agents(
     target=Agent,
     to_align=Agent,
-) -> Agent:
+) -> float:
+    aligned_copy = copy.deepcopy(to_align)
     return compare_sequentials(
-        target.critic, to_align.critic
-    ) + compare_sequentials(target.actor_mean, to_align.actor_mean)
+        target.critic, aligned_copy.critic
+    ) + compare_sequentials(target.actor_mean, aligned_copy.actor_mean)
 
 
 def init_seeds(args: Args):

@@ -14,7 +14,7 @@ from envs.env_sets import init_env_sets
 from ppo.ppo_eval import evaluate
 from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
-from task_selectors.task_selector import UniformSelector
+from task_selectors.task_selector import InsSelector, UniformSelector
 from train_maml_ppo import train_maml_ppo
 
 from rl_blox.logging.logger import (
@@ -85,8 +85,13 @@ if __name__ == "__main__":
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
     envs_train_set, envs_test_set = init_env_sets(args, run_name)
-    selector = UniformSelector(envs_train_set, logger=logger)
     agent = Agent(envs_train_set[0]).to(device)
+    selector = InsSelector(
+        envs_train_set,
+        from_last=False,
+        agents=[agent for _ in range(len(envs_train_set))],
+        logger=logger,
+    )
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     data_holder = DataHolder(envs_train_set[0], args, device)
 
