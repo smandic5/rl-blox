@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from gymnasium.vector.vector_env import VectorEnv
+from task_selectors.ins.negation_layer import NegationMask
 from torch.distributions.normal import Normal
 
 
@@ -14,33 +15,29 @@ def layer_init(layer: nn.Linear, std=np.sqrt(2), bias_const=0.0):
 class Agent(nn.Module):
     def __init__(self, envs: VectorEnv):
         super().__init__()
+
+        features = np.array(envs.single_observation_space.shape).prod()
+        actions = np.prod(envs.single_action_space.shape)
+
         self.critic = nn.Sequential(
-            layer_init(
-                nn.Linear(
-                    np.array(envs.single_observation_space.shape).prod(), 64
-                )
-            ),
+            layer_init(nn.Linear(features, 64)),
+            # NegationMask(64),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
+            # NegationMask(64),
             nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(
-                nn.Linear(
-                    np.array(envs.single_observation_space.shape).prod(), 64
-                )
-            ),
+            layer_init(nn.Linear(features, 64)),
+            # NegationMask(64),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
+            # NegationMask(64),
             nn.Tanh(),
-            layer_init(
-                nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01
-            ),
+            layer_init(nn.Linear(64, actions), std=0.01),
         )
-        self.actor_logstd = nn.Parameter(
-            torch.zeros(1, np.prod(envs.single_action_space.shape))
-        )
+        self.actor_logstd = nn.Parameter(torch.zeros(1, actions))
 
     def get_value(self, x: torch.Tensor) -> torch.Tensor:
         return self.critic(x)
