@@ -79,6 +79,30 @@ class UniformSelector(ProbabilitySelector):
         super().__init__(envs_set, np.ones(l) / l, **kwargs)
 
 
+class HardTaskSelector(ProbabilitySelector):
+    def __init__(self, envs_set, progress_weight: float = 0.5, **kwargs):
+        l = len(envs_set)
+        super().__init__(envs_set, np.ones(l) / l, **kwargs)
+        self.last_progress = np.zeros(l)
+        self.learning_speed = np.zeros(l)
+        self.progress_weight = progress_weight
+
+    def feedback(self, reward: float = None, **kwargs):
+        progress = (reward + 1500) / 1500
+        self.learning_speed[self.sampled_env] = (
+            progress - self.last_progress[self.sampled_env]
+        )
+        self.last_progress[self.sampled_env] = progress
+        t = 1
+
+        p_progress = scipy.special.softmax((-self.learning_speed) / t)
+        p_speed = scipy.special.softmax((1 - self.last_progress) / t)
+        self.weights = p_progress * self.progress_weight + p_speed * (
+            1 - self.progress_weight
+        )
+        return super().feedback(**kwargs)
+
+
 class MatrixProbabilitySelector(ProbabilitySelector):
     def __init__(
         self,
