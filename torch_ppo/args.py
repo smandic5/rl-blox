@@ -25,15 +25,15 @@ class Args:
     # Meta specific arguments
     total_meta_iterations: int = 10000
     meta_learning_rate: float = 3e-4
-    inner_learning_rate: float = 0.1
+    inner_learning_rate: float = 3e-4
     anneal_inner_lr: bool = True
-    inner_learning_rate_goal: float = 0.01
-    inner_learning_rate_anneal_steps: float = 1
+    inner_learning_rate_goal: float = 3e-6
+    inner_learning_rate_anneal_steps: float = 50
     num_adaptation_steps: int = 1
     train_set_size: int = 10
-    test_set_size: int = 3
+    test_set_size: int = 1
     eval_freq: int = 100
-    eval_len: int = 15
+    eval_len: int = 100
 
     # Cheetah specific arguments
     target_velocity_min: float = 1.5

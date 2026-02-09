@@ -12,8 +12,8 @@ from agent import Agent
 from args import Args
 from envs.env_sets import init_env_sets
 from ppo.ppo_eval import evaluate
+from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
-from storage import DataHolder, RunData
 
 from rl_blox.logging.logger import (
     AIMLogger,
