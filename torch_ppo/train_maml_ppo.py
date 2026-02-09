@@ -92,7 +92,7 @@ def run_eval(
         eval_logger.start_new_episode()
         agent_clone = Agent(envs)
         agent_clone.load_state_dict(agent.state_dict())
-        optimizer_clone = torch.optim.SGD(
+        optimizer_clone = torch.optim.Adam(
             agent_clone.parameters(), lr=args.inner_learning_rate
         )
         inner_loss, rewards = train_ppo(
