@@ -88,14 +88,15 @@ class MatrixProbabilitySelector(ProbabilitySelector):
         cost_matrix: np.ndarray = None,
         **kwargs,
     ):
+        l = len(envs_set)
         if cost_matrix is None:
-            l = len(envs_set)
             cost_matrix = np.ones((l, l)) / l
         assert cost_matrix.shape[0] == cost_matrix.shape[1]
         self.cost_matrix = cost_matrix
         self.from_last = from_last
         self.recalculate_on_feedback = recalculate_on_feedback
-        super().__init__(envs_set, weights=self.recalculate_weights(), **kwargs)
+        super().__init__(envs_set, weights=np.zeros((l, l)), **kwargs)
+        self.weights = self.recalculate_weights()
 
     def recalculate_weights(self) -> np.ndarray:
         if self.from_last:
@@ -113,8 +114,16 @@ class MatrixProbabilitySelector(ProbabilitySelector):
 
 
 class InsSelector(MatrixProbabilitySelector):
-    def __init__(self, envs_set, from_last, agents: list[Agent], **kwargs):
+    def __init__(
+        self,
+        envs_set,
+        from_last,
+        agents: list[Agent],
+        disimilarity: bool,
+        **kwargs,
+    ):
         self.agents = agents
+        self.disimilarity = disimilarity
         l = len(envs_set)
         super().__init__(
             envs_set, from_last, True, cost_matrix=np.zeros((l, l)), **kwargs
@@ -126,9 +135,9 @@ class InsSelector(MatrixProbabilitySelector):
         for i, agent in enumerate(self.agents):
             if i == self.sampled_env:
                 continue
-            diff = -compare_agents(
-                agent, module
-            )  # TODO make negation a parameter
+            diff = compare_agents(agent, module) * (
+                1 if self.disimilarity else -1
+            )
             self.cost_matrix[self.sampled_env, i] = diff
             self.cost_matrix[i, self.sampled_env] = diff
 

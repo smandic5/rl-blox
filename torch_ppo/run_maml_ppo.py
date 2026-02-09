@@ -88,8 +88,9 @@ if __name__ == "__main__":
     agent = Agent(envs_train_set[0]).to(device)
     selector = InsSelector(
         envs_train_set,
-        from_last=False,
+        from_last=True,
         agents=[agent for _ in range(len(envs_train_set))],
+        disimilarity=True,
         logger=logger,
     )
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
