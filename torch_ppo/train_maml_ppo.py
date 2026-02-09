@@ -34,8 +34,12 @@ def train_maml_ppo(
         envs = selector.sample()
         optimizer.zero_grad()
 
-        # f iteration % args.eval_freq == 0 and test_set is not None:
-        #    envs = run_eval(agent, data_holder, test_set, args, iteration)
+        if (
+            iteration % args.eval_freq == 0
+            and test_set is not None
+            and iteration != 2
+        ):
+            envs = run_eval(agent, data_holder, test_set, args, iteration)
 
         print(f"Metal iteration: {iteration}")
         with higher.innerloop_ctx(
@@ -68,6 +72,7 @@ def train_maml_ppo(
                     adapted_reward=adapted_reward,
                 ),
                 used_model=fast_agent,
+                reward=adapted_reward,
             )
             optimizer.step()
 
@@ -90,9 +95,10 @@ def run_eval(
             hparams=vars(args) | {iteration: iteration},
         )
         eval_logger.start_new_episode()
+
         agent_clone = Agent(envs)
         agent_clone.load_state_dict(agent.state_dict())
-        optimizer_clone = torch.optim.Adam(
+        optimizer_clone = torch.optim.SGD(
             agent_clone.parameters(), lr=args.inner_learning_rate
         )
         inner_loss, rewards = train_ppo(

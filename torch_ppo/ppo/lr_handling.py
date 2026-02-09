@@ -15,7 +15,7 @@ def fix_anneal(args: Args, iteration: int) -> float:
 def constant_anneal(
     args: Args, iteration: int, max_iterations: int, base_lr: float
 ) -> float:
-    frac = 1.0 - (iteration - 1.0) / (args.eval_len * 2)  # max_iterations
+    frac = 1.0 - (iteration - 1.0) / max_iterations  # (args.eval_len * 2)  #
     return frac * base_lr
 
 

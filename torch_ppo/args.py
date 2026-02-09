@@ -25,18 +25,18 @@ class Args:
     # Meta specific arguments
     total_meta_iterations: int = 10000
     meta_learning_rate: float = 3e-4
-    inner_learning_rate: float = 3e-4
+    inner_learning_rate: float = 1e-1
     anneal_inner_lr: bool = True
     inner_learning_rate_goal: float = 3e-6
     inner_learning_rate_anneal_steps: float = 50
     num_adaptation_steps: int = 1
-    train_set_size: int = 10
-    test_set_size: int = 1
+    train_set_size: int = 15
+    test_set_size: int = 3
     eval_freq: int = 100
-    eval_len: int = 100
+    eval_len: int = 50
 
     # Cheetah specific arguments
-    target_velocity_min: float = 1.5
+    target_velocity_min: float = 0.0
     target_velocity_max: float = 2.0
 
     # Algorithm specific arguments
@@ -62,7 +62,7 @@ class Args:
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
-    clip_coef: float = 0.2
+    clip_coef: float = 0.5
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
