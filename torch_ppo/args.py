@@ -2,6 +2,7 @@ import os
 import time
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 import tyro
 
@@ -30,6 +31,7 @@ class Args:
     total_meta_iterations: int = 10000
     meta_learning_rate: float = 3e-4
     inner_learning_rate: float = 3e-2
+    anneal_meta_lr: bool = True
     anneal_inner_lr: bool = True
     inner_learning_rate_goal: float = 3e-6
     inner_learning_rate_anneal_steps: float = 50
@@ -38,6 +40,7 @@ class Args:
     test_set_size: int = 3
     eval_freq: int = 100
     eval_len: int = 50
+    save_checkpoints = False
 
     # Cheetah specific arguments
     target_velocity_min: float = 0.0
@@ -86,10 +89,12 @@ class Args:
     """the mini-batch size (computed in runtime)"""
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
+    velocities: list[float] = None
 
 
-def init_args() -> tuple[Args, str, torch.device]:
+def init_args(seed: int) -> tuple[Args, str, torch.device]:
     args = tyro.cli(Args)
+    args.seed = seed
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
@@ -99,4 +104,7 @@ def init_args() -> tuple[Args, str, torch.device]:
     device = torch.device(
         "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
     )
+    args.velocities = np.random.uniform(
+        args.target_velocity_min, args.target_velocity_max, args.train_set_size
+    ).tolist()
     return args, run_name, device

@@ -1,21 +1,17 @@
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_continuous_actionpy
-import os
-import random
-import time
+import sys
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.optim as optim
-import tyro
 from agent import Agent
 from args import Args, init_args
-from envs.env_sets import init_env_sets
+from envs.env_sets import init_env_sets, init_train_envs_set
 from logger import init_logger
-from ppo.ppo_eval import evaluate
 from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
 from seeds import init_seeds
+from task_selectors.factory import init_selector
 from task_selectors.task_selector import (
     HardTaskSelector,
     InsSelector,
@@ -30,24 +26,20 @@ from rl_blox.logging.logger import (
     StandardLogger,
 )
 
-if __name__ == "__main__":
-    args, run_name, device = init_args()
+
+def main(seed, selector_index):
+    args, run_name, device = init_args(seed)
     logger = init_logger(args, run_name)
-    seed = args.seed
     init_seeds(seed, args.torch_deterministic)
 
-    envs_train_set, envs_test_set = init_env_sets(args, run_name)
+    envs_train_set = init_train_envs_set(args, run_name)
     agent = Agent(envs_train_set[0]).to(device)
-    """selector = InsSelector(
+    selector = init_selector(
+        selector_index,
         envs_train_set,
-        from_last=True,
+        logger,
+        args,
         agents=[agent for _ in range(len(envs_train_set))],
-        disimilarity=True,
-        logger=logger,
-    )"""
-    selector = HardTaskSelector(
-        envs_train_set,
-        logger=logger,
     )
     optimizer = optim.Adam(
         agent.parameters(), lr=args.meta_learning_rate, eps=1e-5
@@ -60,9 +52,34 @@ if __name__ == "__main__":
         optimizer,
         data_holder,
         logger=logger,
-        test_set=envs_test_set,
         run_name=run_name,
     )
 
     for e in envs_train_set:
         e.close()
+
+
+if __name__ == "__main__":
+    seed = 1
+    selector_index = 1
+
+    TOTAL_SEEDS = 3
+    TOTAL_SELECTORS = 6
+
+    if len(sys.argv) >= 2:
+        index = int(sys.argv[1])
+        if index >= TOTAL_SEEDS * TOTAL_SELECTORS:
+            raise Exception(
+                f"Index too high: {index}, where max is {TOTAL_SEEDS * TOTAL_SELECTORS - 1}"
+            )
+        seed = index // TOTAL_SELECTORS
+        selector_index = index % TOTAL_SELECTORS
+        if seed >= TOTAL_SEEDS:
+            raise Exception(f"Unexpected Seed: {seed}")
+        if selector_index >= TOTAL_SELECTORS:
+            raise Exception(f"Unexpected Selector: {selector_index}")
+
+    print(f"Seed: {seed}")
+    print(f"Selector: {selector_index}")
+
+    main(seed, selector_index)

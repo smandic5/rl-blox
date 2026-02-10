@@ -25,14 +25,11 @@ def lr_annealing(
     iteration: int,
     max_iterations: int,
     uses_inner_lr: bool = False,
+    start_lr: float = None,
 ):
-    if uses_inner_lr:
-        # lrnow = fix_anneal(args, iteration)
-        lrnow = constant_anneal(
-            args, iteration, max_iterations, args.inner_learning_rate
+    if start_lr is None:
+        start_lr = (
+            args.inner_learning_rate if uses_inner_lr else args.learning_rate
         )
-    else:
-        lrnow = constant_anneal(
-            args, iteration, max_iterations, args.learning_rate
-        )
+    lrnow = constant_anneal(args, iteration, max_iterations, start_lr)
     optimizer.param_groups[0]["lr"] = lrnow

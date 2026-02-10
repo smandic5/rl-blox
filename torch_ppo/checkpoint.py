@@ -6,9 +6,9 @@ from agent import Agent
 from args import Args
 
 
-def save_model(args: Args, run_name: str, agent: Agent):
+def save_model(args: Args, run_name: str, agent: Agent, iteration: int = None):
     print("saving")
-    model_path = f"torch_ppo/runs/{run_name}/{args.exp_name}.agent"
+    model_path = f"torch_ppo/runs/{run_name}/{args.exp_name}-{iteration}.agent"
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     torch.save(agent.state_dict(), model_path)
     print(f"model saved to {model_path}")

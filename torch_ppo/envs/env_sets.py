@@ -6,11 +6,12 @@ from .vector_env import init_vec_envs
 
 
 def init_envs_set(
-    args: Args, run_name: str, set_size: int
+    args: Args, run_name: str, set_size: int, velocities: list[float] = None
 ) -> list[gym.vector.SyncVectorEnv]:
-    velocities = np.random.uniform(
-        args.target_velocity_min, args.target_velocity_max, set_size
-    )
+    if velocities is None:
+        velocities = np.random.uniform(
+            args.target_velocity_min, args.target_velocity_max, set_size
+        )
     print(f"Velocities: {[float(round(v, ndigits=2)) for v in velocities]}")
     return [
         init_vec_envs(args, run_name, target_velocity)
@@ -21,7 +22,9 @@ def init_envs_set(
 def init_train_envs_set(
     args: Args, run_name: str
 ) -> list[gym.vector.SyncVectorEnv]:
-    return init_envs_set(args, run_name, args.train_set_size)
+    return init_envs_set(
+        args, run_name, args.train_set_size, velocities=args.velocities
+    )
 
 
 def init_test_envs_set(
