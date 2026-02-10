@@ -7,7 +7,7 @@ import torch
 import tyro
 
 
-@dataclass
+# @dataclass
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
     """the name of this experiment"""
@@ -40,7 +40,12 @@ class Args:
     test_set_size: int = 3
     eval_freq: int = 100
     eval_len: int = 50
-    save_checkpoints = False
+    save_checkpoints = True
+
+    # Selectors
+    uniform_start_duration: int = 100
+    hard_task_scale = 3.0
+    ins_scale = 3.0
 
     # Cheetah specific arguments
     target_velocity_min: float = 0.0
@@ -89,11 +94,12 @@ class Args:
     """the mini-batch size (computed in runtime)"""
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
-    velocities: list[float] = None
+    velocities: list[float] = []
 
 
 def init_args(seed: int) -> tuple[Args, str, torch.device]:
-    args = tyro.cli(Args)
+    # args = tyro.cli(Args)
+    args = Args()
     args.seed = seed
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)

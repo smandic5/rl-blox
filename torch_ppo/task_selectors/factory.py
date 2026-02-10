@@ -53,4 +53,6 @@ def init_selector(
         logger=logger,
         disimilarity=disimilarity,
         from_last=from_last,
+        agents=agents,
+        args=args,
     )

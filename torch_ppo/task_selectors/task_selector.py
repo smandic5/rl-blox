@@ -2,9 +2,11 @@ import gymnasium as gym
 import higher
 import numpy as np
 import scipy.special
+import sklearn.preprocessing
 import torch
 import torch.optim as optim
 from agent import Agent
+from args import Args
 
 from rl_blox.logging.logger import LoggerBase
 
@@ -13,11 +15,17 @@ from .ins.ins import compare_agents
 
 
 class TaskSelector:
-    def __init__(self, envs_set: list[gym.vector.SyncVectorEnv], **kwargs):
+    def __init__(
+        self,
+        envs_set: list[gym.vector.SyncVectorEnv],
+        args: Args = None,
+        **kwargs,
+    ):
         self.envs_set = envs_set
         self.sampled_env: int = 0
         self.iteration: int = 0
         self.waiting: bool = False
+        self.args = args
 
     def sample(self, **kwargs):
         if self.waiting:
@@ -64,9 +72,18 @@ class ProbabilitySelector(LoggingSelector):
         self.weights = weights
 
     def sample(self, **kwargs):
+        stored_weights = self.weights
+        if self.iteration < self.args.uniform_start_duration:
+            l = len(self.envs_set)
+            self.weights = np.ones(l) / l
         for i, e in enumerate(self.weights):
             self.stats_sample[f"Probability Env {i}"] = e
+        print(
+            f"Env Probabilities: {[round(float(x), 2) for x in self.weights]}"
+        )
         self.sampled_env = np.random.choice(len(self.envs_set), p=self.weights)
+        print(f"Selected: {self.sampled_env}")
+        self.weights = stored_weights
         return super().sample(**kwargs)
 
     def feedback(self, **kwargs):
@@ -93,10 +110,15 @@ class HardTaskSelector(ProbabilitySelector):
             progress - self.last_progress[self.sampled_env]
         )
         self.last_progress[self.sampled_env] = progress
-        t = 1
 
-        p_progress = scipy.special.softmax((-self.learning_speed) / t)
-        p_speed = scipy.special.softmax((1 - self.last_progress) / t)
+        def standardize(x):
+            if any(x != x[0]):
+                return (x - np.mean(x)) / np.std(x)
+            else:
+                return x
+
+        p_progress = scipy.special.softmax(standardize(-self.learning_speed))
+        p_speed = scipy.special.softmax(standardize(1 - self.last_progress))
         self.weights = p_progress * self.progress_weight + p_speed * (
             1 - self.progress_weight
         )
@@ -127,6 +149,13 @@ class MatrixProbabilitySelector(ProbabilitySelector):
             w = self.cost_matrix[self.sampled_env]
         else:
             w = np.mean(self.cost_matrix, axis=0)
+        if self.sampled_env == np.argmin(w) and any(w != w[self.sampled_env]):
+            not_selected = w != w[self.sampled_env]
+            m = w[not_selected][np.argmin(abs(w[not_selected]))]
+            w[not_selected] -= m
+        if any(w != w[0]):
+            w = (w - np.mean(w)) / np.std(w)
+        # w *= self.args.ins_scale
         w = np.clip(w, -10, 10)
         w = scipy.special.softmax(w)
         return w

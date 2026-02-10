@@ -72,9 +72,9 @@ if __name__ == "__main__":
             raise Exception(
                 f"Index too high: {index}, where max is {TOTAL_SEEDS * TOTAL_SELECTORS - 1}"
             )
-        seed = index // TOTAL_SELECTORS
+        seed += index // TOTAL_SELECTORS
         selector_index = index % TOTAL_SELECTORS
-        if seed >= TOTAL_SEEDS:
+        if seed >= TOTAL_SEEDS + 1:
             raise Exception(f"Unexpected Seed: {seed}")
         if selector_index >= TOTAL_SELECTORS:
             raise Exception(f"Unexpected Selector: {selector_index}")
