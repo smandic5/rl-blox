@@ -29,7 +29,7 @@ class Args:
     # Meta specific arguments
     total_meta_iterations: int = 10000
     meta_learning_rate: float = 3e-4
-    inner_learning_rate: float = 1e-1
+    inner_learning_rate: float = 3e-2
     anneal_inner_lr: bool = True
     inner_learning_rate_goal: float = 3e-6
     inner_learning_rate_anneal_steps: float = 50
