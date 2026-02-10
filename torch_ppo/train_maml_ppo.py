@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 from agent import Agent
 from args import Args
+from checkpoint import save_model
 from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
 from task_selectors.task_selector import TaskSelector
@@ -25,6 +26,7 @@ def train_maml_ppo(
     data_holder: DataHolder,
     logger: LoggerBase = None,
     test_set: list[gym.vector.SyncVectorEnv] = None,
+    run_name: str = None,
 ):
     args = data_holder.args
     inner_optimizer = torch.optim.SGD(
@@ -39,9 +41,11 @@ def train_maml_ppo(
             and test_set is not None
             and iteration != 2
         ):
-            envs = run_eval(agent, data_holder, test_set, args, iteration)
+            envs = run_eval(
+                agent, data_holder, test_set, args, iteration, run_name=run_name
+            )
 
-        print(f"Metal iteration: {iteration}")
+        print(f"Meta iteration: {iteration}")
         with higher.innerloop_ctx(
             agent, inner_optimizer, copy_initial_weights=False
         ) as (fast_agent, diff_opt):
@@ -84,7 +88,13 @@ def run_eval(
     args: Args,
     iteration: int,
     logger: LoggerBase = None,
+    run_name: str = None,
 ):
+    if run_name is not None:
+        save_model(args, run_name, agent)
+        from checkpoint import load_model
+
+        a = load_model(run_name, args, test_set[0], data_holder.device)
 
     print("Evaluation started")
     for test_env_i, envs in enumerate(test_set):

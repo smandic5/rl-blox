@@ -1,5 +1,9 @@
 import os
+import time
 from dataclasses import dataclass
+
+import torch
+import tyro
 
 
 @dataclass
@@ -82,3 +86,17 @@ class Args:
     """the mini-batch size (computed in runtime)"""
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
+
+
+def init_args() -> tuple[Args, str, torch.device]:
+    args = tyro.cli(Args)
+    args.batch_size = int(args.num_envs * args.num_steps)
+    args.minibatch_size = int(args.batch_size // args.num_minibatches)
+    args.num_iterations = args.total_timesteps // args.batch_size
+    run_name = (
+        f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    )
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() and args.cuda else "cpu"
+    )
+    return args, run_name, device
