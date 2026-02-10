@@ -1,7 +1,6 @@
 import numpy as np
 import torch
-
-from rl_blox.logging.logger import LoggerBase
+from logger_base import LoggerBase
 
 
 class Loss:

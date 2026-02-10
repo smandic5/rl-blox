@@ -8,6 +8,7 @@ from agent import Agent
 from args import Args, init_args
 from envs.env_sets import init_env_sets, init_train_envs_set
 from logger import init_logger
+from logger_base import AIMLogger, LoggerBase, LoggerList, StandardLogger
 from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
 from seeds import init_seeds
@@ -18,13 +19,6 @@ from task_selectors.task_selector import (
     UniformSelector,
 )
 from train_maml_ppo import train_maml_ppo
-
-from rl_blox.logging.logger import (
-    AIMLogger,
-    LoggerBase,
-    LoggerList,
-    StandardLogger,
-)
 
 
 def main(seed, selector_index):

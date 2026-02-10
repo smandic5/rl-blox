@@ -6,12 +6,11 @@ import torch.optim as optim
 from agent import Agent
 from args import Args
 from checkpoint import save_model
+from logger_base import LoggerBase
 from ppo.lr_handling import lr_annealing
 from ppo.storage import DataHolder, RunData
 from ppo.train_ppo import train_ppo
 from task_selectors.task_selector import TaskSelector
-
-from rl_blox.logging.logger import LoggerBase
 
 
 def train_maml_ppo(

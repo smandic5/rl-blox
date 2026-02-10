@@ -3,8 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from agent import Agent
-
-from rl_blox.logging.logger import LoggerBase
+from logger_base import LoggerBase
 
 from .storage import DataHolder, RunData
 from .update.loss import Loss

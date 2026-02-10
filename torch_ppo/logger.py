@@ -1,11 +1,5 @@
 from args import Args
-
-from rl_blox.logging.logger import (
-    AIMLogger,
-    LoggerBase,
-    LoggerList,
-    StandardLogger,
-)
+from logger_base import AIMLogger, LoggerBase, LoggerList, StandardLogger
 
 
 def init_logger(args: Args, run_name: str) -> LoggerBase:

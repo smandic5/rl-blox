@@ -5,7 +5,8 @@ import higher
 import numpy as np
 import scipy.optimize
 import torch
-import tyro
+
+# import tyro
 from agent import Agent
 from args import Args
 from envs.env_sets import init_env_sets
@@ -116,7 +117,7 @@ def init_seeds(args: Args):
 
 
 if __name__ == "__main__":
-    args = tyro.cli(Args)
+    args = Args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size

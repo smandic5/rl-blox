@@ -3,8 +3,7 @@ import numpy as np
 import torch.optim as optim
 from agent import Agent
 from args import Args
-
-from rl_blox.logging.logger import LoggerBase
+from logger_base import LoggerBase
 
 from .lr_handling import lr_annealing
 from .ppo_update import update_agent
